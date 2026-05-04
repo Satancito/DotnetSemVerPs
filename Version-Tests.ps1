@@ -193,6 +193,39 @@ function Invoke-UsageExpectFailure {
     Write-Host "-------------------------------------"
 }
 
+function Invoke-ScriptVersion {
+    $output = & $scriptPath -Version
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
+    }
+
+    Assert-Equal "1.1.0" $output "Script version output must match"
+
+    Write-Host "./Version.ps1 -Version"
+    Write-Host "Script Version: $output"
+    Write-Host "-------------------------------------"
+}
+
+function Invoke-ScriptVersionExpectFailure {
+    $errorMessage = $null
+
+    try {
+        & $scriptPath -Version -Type Patch *> $null
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+    }
+
+    if ($null -eq $errorMessage) {
+        throw "Expected failure because -Version must be used alone."
+    }
+
+    Write-Host "./Version.ps1 -Version -Type Patch"
+    Write-Host "Expected Failure: True"
+    Write-Host "Error: $errorMessage"
+    Write-Host "-------------------------------------"
+}
+
 function Get-ParameterSummary {
     param([hashtable]$Parameters)
 
@@ -380,6 +413,8 @@ function Test-MajorResets {
 try {
     Invoke-Usage
     Invoke-UsageExpectFailure
+    Invoke-ScriptVersion
+    Invoke-ScriptVersionExpectFailure
     Test-StableTypePromotesPrereleaseAndBuildWithoutBump
     Test-StableTypePromotesPrereleaseOnlyWithoutBump
     Test-StableTypePromotesBuildOnlyWithoutBump

@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.1.0 - 2026-05-04
+
+### Added
+
+- Added an exclusive `-Version` parameter set to print the script version.
+
 ## 1.0.0 - 2026-05-04
 
 Initial stable release.

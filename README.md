@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.0.0`.
+Current script version: `1.1.0`.
 
 ## Features
 
@@ -65,8 +65,14 @@ Show help:
 ./Version.ps1 -Usage
 ```
 
-`-Usage` is in its own parameter set. It cannot be combined with any versioning
-parameter.
+Show the script version:
+
+```powershell
+./Version.ps1 -Version
+```
+
+`-Usage` and `-Version` each have their own parameter set. They cannot be
+combined with each other or with any versioning parameter.
 
 Versioning syntax:
 
@@ -305,6 +311,7 @@ After NumVer: 7.3.1
 - `-IsNotPrerelease` overrides `-IsPrerelease`.
 - `-IsNotBuild` overrides `-IsBuild`.
 - `-Usage` belongs to an exclusive parameter set and cannot be combined with versioning parameters.
+- `-Version` belongs to an exclusive parameter set and cannot be combined with versioning parameters.
 
 ## Running Tests
 
@@ -349,6 +356,8 @@ The tests cover:
 
 - usage output
 - invalid `-Usage` parameter set combinations
+- script version output
+- invalid `-Version` parameter set combinations
 - stable promotion
 - stable promotion from prerelease
 - stable promotion from build metadata

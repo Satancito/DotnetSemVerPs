@@ -1,37 +1,40 @@
-[CmdletBinding(DefaultParameterSetName = "Version")]
+[CmdletBinding(DefaultParameterSetName = "Update")]
 param(
-    [Parameter(Mandatory = $true, ParameterSetName = "Version")]
+    [Parameter(Mandatory = $true, ParameterSetName = "Update")]
     [string]$ProjectPath,
 
-    [Parameter(Mandatory = $true, ParameterSetName = "Version")]
+    [Parameter(Mandatory = $true, ParameterSetName = "Update")]
     [string]$Type,
 
-    [Parameter(ParameterSetName = "Version")]
+    [Parameter(ParameterSetName = "Update")]
     [string]$PrereleaseName,
 
-    [Parameter(ParameterSetName = "Version")]
+    [Parameter(ParameterSetName = "Update")]
     [string]$BuildName,
 
-    [Parameter(ParameterSetName = "Version")]
+    [Parameter(ParameterSetName = "Update")]
     [switch]$IsPrerelease,
 
-    [Parameter(ParameterSetName = "Version")]
+    [Parameter(ParameterSetName = "Update")]
     [switch]$IsNotPrerelease,
 
-    [Parameter(ParameterSetName = "Version")]
+    [Parameter(ParameterSetName = "Update")]
     [switch]$IsBuild,
 
-    [Parameter(ParameterSetName = "Version")]
+    [Parameter(ParameterSetName = "Update")]
     [switch]$IsNotBuild,
 
-    [Parameter(ParameterSetName = "Version")]
+    [Parameter(ParameterSetName = "Update")]
     [switch]$Stable,
 
     [Parameter(Mandatory = $true, ParameterSetName = "Usage")]
-    [switch]$Usage
+    [switch]$Usage,
+
+    [Parameter(Mandatory = $true, ParameterSetName = "ScriptVersion")]
+    [switch]$Version
 )
 
-$ScriptVersion = "1.0.0"
+$ScriptVersion = "1.1.0"
 
 function Show-Usage {
     Write-Host @"
@@ -43,6 +46,7 @@ Script version: $ScriptVersion
 Usage:
   ./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch|Stable> [options]
   ./Version.ps1 -Usage
+  ./Version.ps1 -Version
 
 csproj properties:
   Version          Generated full SemVer value.
@@ -68,9 +72,11 @@ Options:
   -IsNotBuild                Disables build. Takes precedence over -IsBuild.
   -Stable                    Clears prerelease/build after the increment.
   -Usage                     Shows this help. Must be used alone.
+  -Version                   Shows the script version. Must be used alone.
 
 Rules:
   -Usage must be used alone, without any other parameter.
+  -Version must be used alone, without any other parameter.
   Version stores the final SemVer value.
   NumVer stores only Major.Minor.Patch.
   Major, Minor, and Patch clear stored prerelease/build values unless explicitly enabled.
@@ -88,8 +94,12 @@ Examples:
 "@
 }
 
+function Show-ScriptVersion {
+    Write-Output $ScriptVersion
+}
+
 function Test-Parameters {
-    if ($Usage) {
+    if ($Usage -or $Version) {
         return
     }
 
@@ -351,10 +361,6 @@ function Update-ProjectVersion {
     }
 }
 
-Write-Host "====================================="
-Write-Host " VERSION SCRIPT"
-Write-Host "====================================="
-
 try {
     Test-Parameters
 
@@ -362,6 +368,15 @@ try {
         Show-Usage
         return
     }
+
+    if ($Version) {
+        Show-ScriptVersion
+        return
+    }
+
+    Write-Host "====================================="
+    Write-Host " VERSION SCRIPT"
+    Write-Host "====================================="
 
     $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type
 
