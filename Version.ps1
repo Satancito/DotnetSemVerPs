@@ -1,4 +1,4 @@
-[CmdletBinding(DefaultParameterSetName = "Update")]
+[CmdletBinding(DefaultParameterSetName = "Update", SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $true, ParameterSetName = "Update")]
     [string]$ProjectPath,
@@ -34,7 +34,7 @@ param(
     [switch]$Version
 )
 
-$ScriptVersion = "1.1.0"
+$ScriptVersion = "1.2.0"
 
 function Show-Usage {
     Write-Host @"
@@ -71,6 +71,7 @@ Options:
   -BuildName <name>          Build name. If omitted, uses the csproj value.
   -IsNotBuild                Disables build. Takes precedence over -IsBuild.
   -Stable                    Clears prerelease/build after the increment.
+  -WhatIf                    Shows the generated result without saving the project file.
   -Usage                     Shows this help. Must be used alone.
   -Version                   Shows the script version. Must be used alone.
 
@@ -81,6 +82,7 @@ Rules:
   NumVer stores only Major.Minor.Patch.
   Major, Minor, and Patch clear stored prerelease/build values unless explicitly enabled.
   Stable as Type does not increment the version; it only promotes to stable.
+  WhatIf calculates and prints the result without writing changes to the project file.
   If IsPrerelease ends as true, PrereleaseName is required.
   If IsBuild ends as true, BuildName is required.
   IsNotPrerelease and IsNotBuild take precedence over their positive flags.
@@ -248,7 +250,8 @@ function Get-EffectiveName {
 function Update-ProjectVersion {
     param(
         [string]$Path,
-        [string]$BumpType
+        [string]$BumpType,
+        [bool]$PreviewOnly = $false
     )
 
     if (-not (Test-Path $Path)) {
@@ -340,15 +343,17 @@ function Update-ProjectVersion {
         $semVer = "$semVer+$effectiveBuildName.$buildNumber"
     }
 
-    $versionProperty.InnerText = $semVer
-    $numVerProperty.InnerText = $newCore
-    $buildNumberProperty.InnerText = $buildNumber
-    $prereleaseNameProperty.InnerText = $effectivePrereleaseName
-    $buildNameProperty.InnerText = $effectiveBuildName
-    $isPrereleaseProperty.InnerText = $effectiveIsPrerelease.ToString()
-    $isBuildProperty.InnerText = $effectiveIsBuild.ToString()
+    if (-not $PreviewOnly) {
+        $versionProperty.InnerText = $semVer
+        $numVerProperty.InnerText = $newCore
+        $buildNumberProperty.InnerText = $buildNumber
+        $prereleaseNameProperty.InnerText = $effectivePrereleaseName
+        $buildNameProperty.InnerText = $effectiveBuildName
+        $isPrereleaseProperty.InnerText = $effectiveIsPrerelease.ToString()
+        $isBuildProperty.InnerText = $effectiveIsBuild.ToString()
 
-    $project.Save((Resolve-Path $Path))
+        $project.Save((Resolve-Path $Path))
+    }
 
     return @{
         Version = $semVer
@@ -356,6 +361,7 @@ function Update-ProjectVersion {
         BuildNumber = $buildNumber
         IsPrerelease = $effectiveIsPrerelease
         IsBuild = $effectiveIsBuild
+        WhatIf = $PreviewOnly
         PrereleaseName = $effectivePrereleaseName
         BuildName = $effectiveBuildName
     }
@@ -378,13 +384,14 @@ try {
     Write-Host " VERSION SCRIPT"
     Write-Host "====================================="
 
-    $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type
+    $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $WhatIfPreference
 
     Write-Host "Version: $($result.Version)"
     Write-Host "NumVer: $($result.NumVer)"
     Write-Host "BuildNumber: $($result.BuildNumber)"
     Write-Host "IsPrerelease: $($result.IsPrerelease)"
     Write-Host "IsBuild: $($result.IsBuild)"
+    Write-Host "WhatIf: $($result.WhatIf)"
     Write-Host "PrereleaseName: $($result.PrereleaseName)"
     Write-Host "BuildName: $($result.BuildName)"
 }

@@ -199,7 +199,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.1.0" $output "Script version output must match"
+    Assert-Equal "1.2.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -410,6 +410,25 @@ function Test-MajorResets {
     Assert-Equal "8.0.0" $project.Version "Stable major must leave normal Version"
 }
 
+function Test-WhatIfDoesNotSaveProject {
+    $path = New-TestProject -Version "7.3.0"
+    $output = & $scriptPath -ProjectPath $path -Type Patch -WhatIf *>&1
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Version.ps1 -WhatIf failed with exit code $LASTEXITCODE."
+    }
+
+    $project = Read-Project $path
+
+    Assert-Equal "7.3.0" $project.Version "WhatIf must not update Version"
+    Assert-Equal "7.3.0" $project.NumVer "WhatIf must not update NumVer"
+    Assert-Match ($output -join "`n") 'Version: 7\.3\.1' "WhatIf must print the calculated Version"
+    Assert-Match ($output -join "`n") 'WhatIf: True' "WhatIf output must indicate preview mode"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Type Patch -WhatIf"
+    Write-Host "WhatIf Output: OK"
+    Write-Host "-------------------------------------"
+}
+
 try {
     Invoke-Usage
     Invoke-UsageExpectFailure
@@ -429,6 +448,7 @@ try {
     Test-IsNotPrereleaseClearsOnlyPrerelease
     Test-IsNotBuildClearsOnlyBuild
     Test-MajorResets
+    Test-WhatIfDoesNotSaveProject
 
     Write-Host "All tests passed."
 }
