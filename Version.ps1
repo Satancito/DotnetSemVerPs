@@ -31,7 +31,7 @@ param(
     [switch]$Usage
 )
 
-$ScriptVersion = "1.0"
+$ScriptVersion = "1.0.0"
 
 function Show-Usage {
     Write-Host @"
