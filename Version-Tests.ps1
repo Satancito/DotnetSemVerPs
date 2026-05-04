@@ -67,6 +67,42 @@ function Assert-Match {
     }
 }
 
+function Write-SectionTitle {
+    param([string]$Title)
+
+    $width = 30
+    $innerWidth = $width - 2
+    $padding = $innerWidth - $Title.Length
+    $leftPadding = [Math]::Floor($padding / 2)
+    $rightPadding = $padding - $leftPadding
+
+    Write-Host ("┌" + ("─" * $innerWidth) + "┐")
+    Write-Host ("│" + (" " * $leftPadding) + $Title + (" " * $rightPadding) + "│")
+    Write-Host ("└" + ("─" * $innerWidth) + "┘")
+}
+
+function Write-TestSeparator {
+    Write-Host ("─" * 60)
+}
+
+function Write-TestVersionState {
+    param(
+        [string]$Version,
+        [string]$NumVer,
+        [string]$IsPrerelease,
+        [string]$PrereleaseName,
+        [string]$IsBuild,
+        [string]$BuildName
+    )
+
+    Write-Host "Version: $Version"
+    Write-Host "NumVer: $NumVer"
+    Write-Host "IsPrerelease: $IsPrerelease"
+    Write-Host "PrereleaseName: $PrereleaseName"
+    Write-Host "IsBuild: $IsBuild"
+    Write-Host "BuildName: $BuildName"
+}
+
 function Invoke-Version {
     param(
         [string]$ProjectPath,
@@ -93,19 +129,11 @@ function Invoke-Version {
     Write-Host $commandText
     Write-Host "Type: $($Parameters["Type"])"
     Write-Host "Params: $parameterSummary"
-    Write-Host "Before Version: $originalVersion"
-    Write-Host "Before NumVer: $originalNumVer"
-    Write-Host "Before IsPrerelease: $originalIsPrerelease"
-    Write-Host "Before PrereleaseName: $originalPrereleaseName"
-    Write-Host "Before IsBuild: $originalIsBuild"
-    Write-Host "Before BuildName: $originalBuildName"
-    Write-Host "After Version: $($after.Version)"
-    Write-Host "After NumVer: $($after.NumVer)"
-    Write-Host "After IsPrerelease: $($after.IsPrerelease)"
-    Write-Host "After PrereleaseName: $($after.PrereleaseName)"
-    Write-Host "After IsBuild: $($after.IsBuild)"
-    Write-Host "After BuildName: $($after.BuildName)"
-    Write-Host "-------------------------------------"
+    Write-SectionTitle "Before"
+    Write-TestVersionState $originalVersion $originalNumVer $originalIsPrerelease $originalPrereleaseName $originalIsBuild $originalBuildName
+    Write-SectionTitle "After"
+    Write-TestVersionState $after.Version $after.NumVer $after.IsPrerelease $after.PrereleaseName $after.IsBuild $after.BuildName
+    Write-TestSeparator
 }
 
 function Invoke-VersionExpectFailure {
@@ -140,20 +168,12 @@ function Invoke-VersionExpectFailure {
         Write-Host "Type: $($Parameters["Type"])"
         Write-Host "Params: $parameterSummary"
         Write-Host "Expected Failure: True"
-        Write-Host "Before Version: $originalVersion"
-        Write-Host "Before NumVer: $originalNumVer"
-        Write-Host "Before IsPrerelease: $originalIsPrerelease"
-        Write-Host "Before PrereleaseName: $originalPrereleaseName"
-        Write-Host "Before IsBuild: $originalIsBuild"
-        Write-Host "Before BuildName: $originalBuildName"
-        Write-Host "After Version: $($after.Version)"
-        Write-Host "After NumVer: $($after.NumVer)"
-        Write-Host "After IsPrerelease: $($after.IsPrerelease)"
-        Write-Host "After PrereleaseName: $($after.PrereleaseName)"
-        Write-Host "After IsBuild: $($after.IsBuild)"
-        Write-Host "After BuildName: $($after.BuildName)"
+        Write-SectionTitle "Before"
+        Write-TestVersionState $originalVersion $originalNumVer $originalIsPrerelease $originalPrereleaseName $originalIsBuild $originalBuildName
+        Write-SectionTitle "After"
+        Write-TestVersionState $after.Version $after.NumVer $after.IsPrerelease $after.PrereleaseName $after.IsBuild $after.BuildName
         Write-Host "Error: $errorMessage"
-        Write-Host "-------------------------------------"
+        Write-TestSeparator
         return
     }
 
@@ -170,7 +190,7 @@ function Invoke-Usage {
 
     Write-Host "./Version.ps1 -Usage"
     Write-Host "Usage Output: OK"
-    Write-Host "-------------------------------------"
+    Write-TestSeparator
 }
 
 function Invoke-UsageExpectFailure {
@@ -190,7 +210,7 @@ function Invoke-UsageExpectFailure {
     Write-Host "./Version.ps1 -Usage -Type Patch"
     Write-Host "Expected Failure: True"
     Write-Host "Error: $errorMessage"
-    Write-Host "-------------------------------------"
+    Write-TestSeparator
 }
 
 function Invoke-ScriptVersion {
@@ -199,11 +219,11 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.2.0" $output "Script version output must match"
+    Assert-Equal "1.2.1" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
-    Write-Host "-------------------------------------"
+    Write-TestSeparator
 }
 
 function Invoke-ScriptVersionExpectFailure {
@@ -223,7 +243,7 @@ function Invoke-ScriptVersionExpectFailure {
     Write-Host "./Version.ps1 -Version -Type Patch"
     Write-Host "Expected Failure: True"
     Write-Host "Error: $errorMessage"
-    Write-Host "-------------------------------------"
+    Write-TestSeparator
 }
 
 function Get-ParameterSummary {
@@ -421,12 +441,18 @@ function Test-WhatIfDoesNotSaveProject {
 
     Assert-Equal "7.3.0" $project.Version "WhatIf must not update Version"
     Assert-Equal "7.3.0" $project.NumVer "WhatIf must not update NumVer"
-    Assert-Match ($output -join "`n") 'Version: 7\.3\.1' "WhatIf must print the calculated Version"
+    Assert-Match ($output -join "`n") "(?m)^┌─{28}┐$" "WhatIf must print the fixed title box top"
+    Assert-Match ($output -join "`n") "(?m)^│\s+Current\s+│$" "WhatIf must print the current block title"
+    Assert-Match ($output -join "`n") "(?s)│\s+Current\s+│\r?\n└─{28}┘\r?\nVersion: 7\.3\.0" "WhatIf must print the current Version"
+    Assert-Match ($output -join "`n") "(?s)│\s+Current\s+│\r?\n└─{28}┘\r?\nVersion: 7\.3\.0\r?\nNumVer: 7\.3\.0" "WhatIf must print the current NumVer"
+    Assert-Match ($output -join "`n") "(?m)^│\s+Next\s+│$" "WhatIf must print the next block title"
+    Assert-Match ($output -join "`n") "(?s)│\s+Next\s+│\r?\n└─{28}┘\r?\nVersion: 7\.3\.1" "WhatIf must print the calculated Version"
+    Assert-Match ($output -join "`n") "(?s)│\s+Next\s+│\r?\n└─{28}┘\r?\nVersion: 7\.3\.1\r?\nNumVer: 7\.3\.1" "WhatIf must print the calculated NumVer"
     Assert-Match ($output -join "`n") 'WhatIf: True' "WhatIf output must indicate preview mode"
 
     Write-Host "./Version.ps1 -ProjectPath $path -Type Patch -WhatIf"
     Write-Host "WhatIf Output: OK"
-    Write-Host "-------------------------------------"
+    Write-TestSeparator
 }
 
 try {

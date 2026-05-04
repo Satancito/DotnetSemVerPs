@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.2.0`.
+Current script version: `1.2.1`.
 
 ## Features
 
@@ -88,8 +88,25 @@ Preview without saving:
 ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -WhatIf
 ```
 
-`-WhatIf` calculates and prints the generated values without writing changes to
-the `.csproj` file.
+`-WhatIf` prints the current project state and the generated next state without
+writing changes to the `.csproj` file.
+
+Example preview output:
+
+```text
+┌────────────────────────────┐
+│          Current           │
+└────────────────────────────┘
+Version: 7.3.0
+NumVer: 7.3.0
+
+┌────────────────────────────┐
+│            Next            │
+└────────────────────────────┘
+Version: 7.3.1
+NumVer: 7.3.1
+WhatIf: True
+```
 
 ## Version Types
 
@@ -319,7 +336,7 @@ After NumVer: 7.3.1
 - `-Stable` as a switch clears prerelease/build after incrementing.
 - `-IsNotPrerelease` overrides `-IsPrerelease`.
 - `-IsNotBuild` overrides `-IsBuild`.
-- `-WhatIf` previews the generated values without saving the project file.
+- `-WhatIf` previews current and next generated values without saving the project file.
 - `-Usage` belongs to an exclusive parameter set and cannot be combined with versioning parameters.
 - `-Version` belongs to an exclusive parameter set and cannot be combined with versioning parameters.
 
@@ -347,18 +364,24 @@ Example test output:
 ./Version.ps1 -ProjectPath C:\...\test.csproj -Type Stable
 Type: Stable
 Params: Type=Stable
-Before Version: 7.3.0-rc2+Build.123
-Before NumVer: 7.3.0
-Before IsPrerelease: True
-Before PrereleaseName: rc2
-Before IsBuild: True
-Before BuildName: Build
-After Version: 7.3.0
-After NumVer: 7.3.0
-After IsPrerelease: False
-After PrereleaseName:
-After IsBuild: False
-After BuildName:
+┌────────────────────────────┐
+│           Before           │
+└────────────────────────────┘
+Version: 7.3.0-rc2+Build.123
+NumVer: 7.3.0
+IsPrerelease: True
+PrereleaseName: rc2
+IsBuild: True
+BuildName: Build
+┌────────────────────────────┐
+│           After            │
+└────────────────────────────┘
+Version: 7.3.0
+NumVer: 7.3.0
+IsPrerelease: False
+PrereleaseName:
+IsBuild: False
+BuildName:
 -------------------------------------
 ```
 

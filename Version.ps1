@@ -34,7 +34,7 @@ param(
     [switch]$Version
 )
 
-$ScriptVersion = "1.2.0"
+$ScriptVersion = "1.2.1"
 
 function Show-Usage {
     Write-Host @"
@@ -273,6 +273,16 @@ function Update-ProjectVersion {
     $isPrereleaseProperty = Get-OrCreate-Property $project $propertyGroup "IsPrerelease"
     $isBuildProperty = Get-OrCreate-Property $project $propertyGroup "IsBuild"
 
+    $currentState = @{
+        Version = $versionProperty.InnerText
+        NumVer = $numVerProperty.InnerText
+        BuildNumber = $buildNumberProperty.InnerText
+        IsPrerelease = Get-BoolProperty $propertyGroup "IsPrerelease"
+        IsBuild = Get-BoolProperty $propertyGroup "IsBuild"
+        PrereleaseName = $prereleaseNameProperty.InnerText
+        BuildName = $buildNameProperty.InnerText
+    }
+
     $currentNumVer = $numVerProperty.InnerText
     if ([string]::IsNullOrWhiteSpace($currentNumVer)) {
         $currentNumVer = ConvertTo-SemVerCore $versionProperty.InnerText
@@ -355,16 +365,49 @@ function Update-ProjectVersion {
         $project.Save((Resolve-Path $Path))
     }
 
-    return @{
+    $nextState = @{
         Version = $semVer
         NumVer = $newCore
         BuildNumber = $buildNumber
         IsPrerelease = $effectiveIsPrerelease
         IsBuild = $effectiveIsBuild
-        WhatIf = $PreviewOnly
         PrereleaseName = $effectivePrereleaseName
         BuildName = $effectiveBuildName
     }
+
+    return @{
+        Current = $currentState
+        Next = $nextState
+        WhatIf = $PreviewOnly
+    }
+}
+
+function Write-VersionState {
+    param(
+        [hashtable]$State
+    )
+
+    Write-Host "Version: $($State.Version)"
+    Write-Host "NumVer: $($State.NumVer)"
+    Write-Host "BuildNumber: $($State.BuildNumber)"
+    Write-Host "IsPrerelease: $($State.IsPrerelease)"
+    Write-Host "IsBuild: $($State.IsBuild)"
+    Write-Host "PrereleaseName: $($State.PrereleaseName)"
+    Write-Host "BuildName: $($State.BuildName)"
+}
+
+function Write-SectionTitle {
+    param([string]$Title)
+
+    $width = 30
+    $innerWidth = $width - 2
+    $padding = $innerWidth - $Title.Length
+    $leftPadding = [Math]::Floor($padding / 2)
+    $rightPadding = $padding - $leftPadding
+
+    Write-Host ("┌" + ("─" * $innerWidth) + "┐")
+    Write-Host ("│" + (" " * $leftPadding) + $Title + (" " * $rightPadding) + "│")
+    Write-Host ("└" + ("─" * $innerWidth) + "┘")
 }
 
 try {
@@ -380,20 +423,29 @@ try {
         return
     }
 
+    $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $WhatIfPreference
+
+    if ($result.WhatIf) {
+        Write-SectionTitle "Current"
+        Write-VersionState -State $result.Current
+        Write-SectionTitle "Next"
+        Write-VersionState -State $result.Next
+        Write-Host "WhatIf: $($result.WhatIf)"
+        return
+    }
+
     Write-Host "====================================="
     Write-Host " VERSION SCRIPT"
     Write-Host "====================================="
 
-    $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $WhatIfPreference
-
-    Write-Host "Version: $($result.Version)"
-    Write-Host "NumVer: $($result.NumVer)"
-    Write-Host "BuildNumber: $($result.BuildNumber)"
-    Write-Host "IsPrerelease: $($result.IsPrerelease)"
-    Write-Host "IsBuild: $($result.IsBuild)"
+    Write-Host "Version: $($result.Next.Version)"
+    Write-Host "NumVer: $($result.Next.NumVer)"
+    Write-Host "BuildNumber: $($result.Next.BuildNumber)"
+    Write-Host "IsPrerelease: $($result.Next.IsPrerelease)"
+    Write-Host "IsBuild: $($result.Next.IsBuild)"
     Write-Host "WhatIf: $($result.WhatIf)"
-    Write-Host "PrereleaseName: $($result.PrereleaseName)"
-    Write-Host "BuildName: $($result.BuildName)"
+    Write-Host "PrereleaseName: $($result.Next.PrereleaseName)"
+    Write-Host "BuildName: $($result.Next.BuildName)"
 }
 catch {
     Write-Error $_

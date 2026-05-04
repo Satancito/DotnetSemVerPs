@@ -2,11 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.2.1 - 2026-05-04
+
+### Changed
+
+- Updated `-WhatIf` and test output formatting with boxed section titles and 60-character separators.
+
 ## 1.2.0 - 2026-05-04
 
 ### Added
 
-- Added `-WhatIf` preview mode to calculate and print generated values without saving project file changes.
+- Added `-WhatIf` preview mode to print current and next generated values without saving project file changes.
 
 ## 1.1.0 - 2026-05-04
 
