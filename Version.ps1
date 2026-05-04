@@ -37,10 +37,13 @@ param(
     [switch]$Version,
 
     [Parameter(Mandatory = $true, ParameterSetName = "ProjectBuildNumber")]
-    [switch]$BuildNumber
+    [switch]$BuildNumber,
+
+    [Parameter(ParameterSetName = "ProjectBuildNumber")]
+    [switch]$Refresh
 )
 
-$ScriptVersion = "1.4.0"
+$ScriptVersion = "1.5.0"
 
 function Show-Usage {
     Write-Host @"
@@ -83,11 +86,12 @@ Options:
   -Usage                     Shows this help. Must be used alone.
   -Version                   Shows the script version when used alone, or the project Version with -ProjectPath.
   -BuildNumber               Shows or creates the project BuildNumber with -ProjectPath.
+  -Refresh                   Recomputes BuildNumber when used with -BuildNumber.
 
 Rules:
   -Usage must be used alone, without any other parameter.
   -Version must be used alone for the script version, or with only ProjectPath for the project version.
-  -BuildNumber must be used with only ProjectPath.
+  -BuildNumber must be used with only ProjectPath, optionally with Refresh.
   Version stores the final SemVer value.
   NumVer stores only Major.Minor.Patch.
   Major, Minor, and Patch clear stored prerelease/build values unless explicitly enabled.
@@ -106,6 +110,7 @@ Examples:
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -WhatIf
   `$projectVersion = & ./Version.ps1 -ProjectPath ./MyProject.csproj -Version
   `$projectBuildNumber = & ./Version.ps1 -ProjectPath ./MyProject.csproj -BuildNumber
+  `$projectBuildNumber = & ./Version.ps1 -ProjectPath ./MyProject.csproj -BuildNumber -Refresh
   `$scriptVersion = & ./Version.ps1 -Version
 "@
 }
@@ -136,7 +141,10 @@ function Get-ProjectVersion {
 }
 
 function Get-OrCreate-ProjectBuildNumber {
-    param([string]$Path)
+    param(
+        [string]$Path,
+        [bool]$ForceRefresh = $false
+    )
 
     if (-not (Test-Path $Path)) {
         throw "File not found: $Path"
@@ -155,7 +163,7 @@ function Get-OrCreate-ProjectBuildNumber {
         $propertyGroup.AppendChild($buildNumberProperty) | Out-Null
     }
 
-    if ([string]::IsNullOrWhiteSpace($buildNumberProperty.InnerText)) {
+    if ($ForceRefresh -or [string]::IsNullOrWhiteSpace($buildNumberProperty.InnerText)) {
         $buildNumberProperty.InnerText = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
         $project.Save((Resolve-Path $Path))
     }
@@ -492,7 +500,7 @@ try {
     }
 
     if ($BuildNumber) {
-        Get-OrCreate-ProjectBuildNumber -Path $ProjectPath
+        Get-OrCreate-ProjectBuildNumber -Path $ProjectPath -ForceRefresh $Refresh
         return
     }
 

@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.4.0`.
+Current script version: `1.5.0`.
 
 ## Features
 
@@ -83,6 +83,12 @@ Read or create the current project build number:
 $projectBuildNumber = & ./Version.ps1 -ProjectPath ./MyProject.csproj -BuildNumber
 ```
 
+Refresh the current project build number:
+
+```powershell
+$projectBuildNumber = & ./Version.ps1 -ProjectPath ./MyProject.csproj -BuildNumber -Refresh
+```
+
 Read the script version:
 
 ```powershell
@@ -93,7 +99,8 @@ $scriptVersion = & ./Version.ps1 -Version
 script version, or with `-ProjectPath` to return the current `.csproj` `Version`
 value. `-BuildNumber` can be used with `-ProjectPath` to return the current
 `.csproj` `BuildNumber` value; if it is missing or empty, the script creates one
-with UTC epoch seconds and returns it.
+with UTC epoch seconds and returns it. Add `-Refresh` to force a new UTC epoch
+seconds value and save it to the project.
 
 Versioning syntax:
 
@@ -362,6 +369,7 @@ After NumVer: 7.3.1
 - `-Version` returns the script version when used alone.
 - `-ProjectPath <path.csproj> -Version` returns the current project `Version` value.
 - `-ProjectPath <path.csproj> -BuildNumber` returns the current project `BuildNumber` value and creates it if missing.
+- `-ProjectPath <path.csproj> -BuildNumber -Refresh` creates a new project `BuildNumber` value and returns it.
 
 ## Running Tests
 
@@ -418,6 +426,7 @@ The tests cover:
 - invalid project `-Version` parameter set combinations
 - project build number output
 - generated project build number output
+- refreshed project build number output
 - invalid project `-BuildNumber` parameter set combinations
 - `-WhatIf` preview without saving
 - stable promotion

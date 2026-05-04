@@ -219,7 +219,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.4.0" $output "Script version output must match"
+    Assert-Equal "1.5.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -312,6 +312,26 @@ function Invoke-ProjectBuildNumberGeneratesMissing {
 
     Write-Host "./Version.ps1 -ProjectPath $path -BuildNumber"
     Write-Host "Generated BuildNumber: $output"
+    Write-TestSeparator
+}
+
+function Invoke-ProjectBuildNumberRefreshesExisting {
+    $path = New-TestProject -BuildNumber "1"
+    $output = & $scriptPath -ProjectPath $path -BuildNumber -Refresh
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Version.ps1 -ProjectPath <path> -BuildNumber -Refresh failed with exit code $LASTEXITCODE."
+    }
+
+    $project = Read-Project $path
+
+    Assert-Match $output '^\d+$' "Refreshed BuildNumber output must be an epoch value"
+    Assert-Equal $output $project.BuildNumber "Refreshed BuildNumber must be saved to the project"
+    if ($output -eq "1") {
+        throw "Refreshed BuildNumber must not keep the old value."
+    }
+
+    Write-Host "./Version.ps1 -ProjectPath $path -BuildNumber -Refresh"
+    Write-Host "Refreshed BuildNumber: $output"
     Write-TestSeparator
 }
 
@@ -554,6 +574,7 @@ try {
     Invoke-ProjectVersionExpectFailure
     Invoke-ProjectBuildNumberReturnsExisting
     Invoke-ProjectBuildNumberGeneratesMissing
+    Invoke-ProjectBuildNumberRefreshesExisting
     Invoke-ProjectBuildNumberExpectFailure
     Test-StableTypePromotesPrereleaseAndBuildWithoutBump
     Test-StableTypePromotesPrereleaseOnlyWithoutBump

@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.5.0 - 2026-05-04
+
+### Added
+
+- Added `-Refresh` for `-ProjectPath <path.csproj> -BuildNumber` to force a new UTC epoch build number and return it.
+
 ## 1.4.0 - 2026-05-04
 
 ### Added
