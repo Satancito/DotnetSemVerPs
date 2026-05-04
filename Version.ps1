@@ -1,6 +1,7 @@
 [CmdletBinding(DefaultParameterSetName = "Update", SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $true, ParameterSetName = "Update")]
+    [Parameter(Mandatory = $true, ParameterSetName = "ProjectVersion")]
     [string]$ProjectPath,
 
     [Parameter(Mandatory = $true, ParameterSetName = "Update")]
@@ -31,10 +32,11 @@ param(
     [switch]$Usage,
 
     [Parameter(Mandatory = $true, ParameterSetName = "ScriptVersion")]
+    [Parameter(Mandatory = $true, ParameterSetName = "ProjectVersion")]
     [switch]$Version
 )
 
-$ScriptVersion = "1.2.1"
+$ScriptVersion = "1.3.0"
 
 function Show-Usage {
     Write-Host @"
@@ -45,8 +47,9 @@ Script version: $ScriptVersion
 
 Usage:
   ./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch|Stable> [options]
-  ./Version.ps1 -Usage
+  ./Version.ps1 -ProjectPath <path.csproj> -Version
   ./Version.ps1 -Version
+  ./Version.ps1 -Usage
 
 csproj properties:
   Version          Generated full SemVer value.
@@ -73,11 +76,11 @@ Options:
   -Stable                    Clears prerelease/build after the increment.
   -WhatIf                    Shows the generated result without saving the project file.
   -Usage                     Shows this help. Must be used alone.
-  -Version                   Shows the script version. Must be used alone.
+  -Version                   Shows the script version when used alone, or the project Version with -ProjectPath.
 
 Rules:
   -Usage must be used alone, without any other parameter.
-  -Version must be used alone, without any other parameter.
+  -Version must be used alone for the script version, or with only ProjectPath for the project version.
   Version stores the final SemVer value.
   NumVer stores only Major.Minor.Patch.
   Major, Minor, and Patch clear stored prerelease/build values unless explicitly enabled.
@@ -93,11 +96,35 @@ Examples:
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -IsBuild -BuildName Build
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -IsPrerelease -PrereleaseName rc2.1 -IsBuild -BuildName Build
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Stable
+  ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -WhatIf
+  `$projectVersion = & ./Version.ps1 -ProjectPath ./MyProject.csproj -Version
+  `$scriptVersion = & ./Version.ps1 -Version
 "@
 }
 
 function Show-ScriptVersion {
     Write-Output $ScriptVersion
+}
+
+function Get-ProjectVersion {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "File not found: $Path"
+    }
+
+    [xml]$project = Get-Content $Path
+    $propertyGroup = @($project.Project.PropertyGroup)[0]
+    if ($null -eq $propertyGroup) {
+        throw "PropertyGroup not found in project file: $Path"
+    }
+
+    $versionProperty = $propertyGroup.SelectSingleNode("Version")
+    if ($null -eq $versionProperty -or [string]::IsNullOrWhiteSpace($versionProperty.InnerText)) {
+        throw "Version property not found in project file: $Path"
+    }
+
+    Write-Output $versionProperty.InnerText
 }
 
 function Test-Parameters {
@@ -419,6 +446,11 @@ try {
     }
 
     if ($Version) {
+        if ($PSCmdlet.ParameterSetName -eq "ProjectVersion") {
+            Get-ProjectVersion -Path $ProjectPath
+            return
+        }
+
         Show-ScriptVersion
         return
     }

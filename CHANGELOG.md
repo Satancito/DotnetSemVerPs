@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.3.0 - 2026-05-04
+
+### Added
+
+- Added `-ProjectPath <path.csproj> -Version` to return the current project `Version` value for use in other scripts.
+
 ## 1.2.1 - 2026-05-04
 
 ### Changed

@@ -219,7 +219,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.2.1" $output "Script version output must match"
+    Assert-Equal "1.3.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -241,6 +241,41 @@ function Invoke-ScriptVersionExpectFailure {
     }
 
     Write-Host "./Version.ps1 -Version -Type Patch"
+    Write-Host "Expected Failure: True"
+    Write-Host "Error: $errorMessage"
+    Write-TestSeparator
+}
+
+function Invoke-ProjectVersion {
+    $path = New-TestProject -Version "7.3.0-rc2+Build.123"
+    $output = & $scriptPath -ProjectPath $path -Version
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Version.ps1 -ProjectPath <path> -Version failed with exit code $LASTEXITCODE."
+    }
+
+    Assert-Equal "7.3.0-rc2+Build.123" $output "Project version output must match"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Version"
+    Write-Host "Project Version: $output"
+    Write-TestSeparator
+}
+
+function Invoke-ProjectVersionExpectFailure {
+    $errorMessage = $null
+    $path = New-TestProject
+
+    try {
+        & $scriptPath -ProjectPath $path -Version -Type Patch *> $null
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+    }
+
+    if ($null -eq $errorMessage) {
+        throw "Expected failure because project -Version cannot be combined with -Type."
+    }
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Version -Type Patch"
     Write-Host "Expected Failure: True"
     Write-Host "Error: $errorMessage"
     Write-TestSeparator
@@ -460,6 +495,8 @@ try {
     Invoke-UsageExpectFailure
     Invoke-ScriptVersion
     Invoke-ScriptVersionExpectFailure
+    Invoke-ProjectVersion
+    Invoke-ProjectVersionExpectFailure
     Test-StableTypePromotesPrereleaseAndBuildWithoutBump
     Test-StableTypePromotesPrereleaseOnlyWithoutBump
     Test-StableTypePromotesBuildOnlyWithoutBump
