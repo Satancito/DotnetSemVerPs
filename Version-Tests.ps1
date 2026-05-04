@@ -219,7 +219,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.3.0" $output "Script version output must match"
+    Assert-Equal "1.4.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -276,6 +276,61 @@ function Invoke-ProjectVersionExpectFailure {
     }
 
     Write-Host "./Version.ps1 -ProjectPath $path -Version -Type Patch"
+    Write-Host "Expected Failure: True"
+    Write-Host "Error: $errorMessage"
+    Write-TestSeparator
+}
+
+function Invoke-ProjectBuildNumberReturnsExisting {
+    $path = New-TestProject -BuildNumber "1234567890"
+    $output = & $scriptPath -ProjectPath $path -BuildNumber
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Version.ps1 -ProjectPath <path> -BuildNumber failed with exit code $LASTEXITCODE."
+    }
+
+    $project = Read-Project $path
+
+    Assert-Equal "1234567890" $output "Project BuildNumber output must match existing value"
+    Assert-Equal "1234567890" $project.BuildNumber "Project BuildNumber must remain unchanged"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -BuildNumber"
+    Write-Host "Project BuildNumber: $output"
+    Write-TestSeparator
+}
+
+function Invoke-ProjectBuildNumberGeneratesMissing {
+    $path = New-TestProject
+    $output = & $scriptPath -ProjectPath $path -BuildNumber
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Version.ps1 -ProjectPath <path> -BuildNumber failed with exit code $LASTEXITCODE."
+    }
+
+    $project = Read-Project $path
+
+    Assert-Match $output '^\d+$' "Project BuildNumber output must be an epoch value"
+    Assert-Equal $output $project.BuildNumber "Generated BuildNumber must be saved to the project"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -BuildNumber"
+    Write-Host "Generated BuildNumber: $output"
+    Write-TestSeparator
+}
+
+function Invoke-ProjectBuildNumberExpectFailure {
+    $errorMessage = $null
+    $path = New-TestProject
+
+    try {
+        & $scriptPath -ProjectPath $path -BuildNumber -Type Patch *> $null
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+    }
+
+    if ($null -eq $errorMessage) {
+        throw "Expected failure because project -BuildNumber cannot be combined with -Type."
+    }
+
+    Write-Host "./Version.ps1 -ProjectPath $path -BuildNumber -Type Patch"
     Write-Host "Expected Failure: True"
     Write-Host "Error: $errorMessage"
     Write-TestSeparator
@@ -497,6 +552,9 @@ try {
     Invoke-ScriptVersionExpectFailure
     Invoke-ProjectVersion
     Invoke-ProjectVersionExpectFailure
+    Invoke-ProjectBuildNumberReturnsExisting
+    Invoke-ProjectBuildNumberGeneratesMissing
+    Invoke-ProjectBuildNumberExpectFailure
     Test-StableTypePromotesPrereleaseAndBuildWithoutBump
     Test-StableTypePromotesPrereleaseOnlyWithoutBump
     Test-StableTypePromotesBuildOnlyWithoutBump

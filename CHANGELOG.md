@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.4.0 - 2026-05-04
+
+### Added
+
+- Added `-ProjectPath <path.csproj> -BuildNumber` to return the current project `BuildNumber` value, creating and saving one when it is missing.
+
 ## 1.3.0 - 2026-05-04
 
 ### Added

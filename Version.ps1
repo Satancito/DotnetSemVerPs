@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory = $true, ParameterSetName = "Update")]
     [Parameter(Mandatory = $true, ParameterSetName = "ProjectVersion")]
+    [Parameter(Mandatory = $true, ParameterSetName = "ProjectBuildNumber")]
     [string]$ProjectPath,
 
     [Parameter(Mandatory = $true, ParameterSetName = "Update")]
@@ -33,10 +34,13 @@ param(
 
     [Parameter(Mandatory = $true, ParameterSetName = "ScriptVersion")]
     [Parameter(Mandatory = $true, ParameterSetName = "ProjectVersion")]
-    [switch]$Version
+    [switch]$Version,
+
+    [Parameter(Mandatory = $true, ParameterSetName = "ProjectBuildNumber")]
+    [switch]$BuildNumber
 )
 
-$ScriptVersion = "1.3.0"
+$ScriptVersion = "1.4.0"
 
 function Show-Usage {
     Write-Host @"
@@ -48,6 +52,7 @@ Script version: $ScriptVersion
 Usage:
   ./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch|Stable> [options]
   ./Version.ps1 -ProjectPath <path.csproj> -Version
+  ./Version.ps1 -ProjectPath <path.csproj> -BuildNumber
   ./Version.ps1 -Version
   ./Version.ps1 -Usage
 
@@ -77,10 +82,12 @@ Options:
   -WhatIf                    Shows the generated result without saving the project file.
   -Usage                     Shows this help. Must be used alone.
   -Version                   Shows the script version when used alone, or the project Version with -ProjectPath.
+  -BuildNumber               Shows or creates the project BuildNumber with -ProjectPath.
 
 Rules:
   -Usage must be used alone, without any other parameter.
   -Version must be used alone for the script version, or with only ProjectPath for the project version.
+  -BuildNumber must be used with only ProjectPath.
   Version stores the final SemVer value.
   NumVer stores only Major.Minor.Patch.
   Major, Minor, and Patch clear stored prerelease/build values unless explicitly enabled.
@@ -98,6 +105,7 @@ Examples:
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Stable
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -WhatIf
   `$projectVersion = & ./Version.ps1 -ProjectPath ./MyProject.csproj -Version
+  `$projectBuildNumber = & ./Version.ps1 -ProjectPath ./MyProject.csproj -BuildNumber
   `$scriptVersion = & ./Version.ps1 -Version
 "@
 }
@@ -127,8 +135,36 @@ function Get-ProjectVersion {
     Write-Output $versionProperty.InnerText
 }
 
+function Get-OrCreate-ProjectBuildNumber {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "File not found: $Path"
+    }
+
+    [xml]$project = Get-Content $Path
+    $propertyGroup = @($project.Project.PropertyGroup)[0]
+    if ($null -eq $propertyGroup) {
+        $propertyGroup = $project.CreateElement("PropertyGroup")
+        $project.Project.AppendChild($propertyGroup) | Out-Null
+    }
+
+    $buildNumberProperty = $propertyGroup.SelectSingleNode("BuildNumber")
+    if ($null -eq $buildNumberProperty) {
+        $buildNumberProperty = $project.CreateElement("BuildNumber")
+        $propertyGroup.AppendChild($buildNumberProperty) | Out-Null
+    }
+
+    if ([string]::IsNullOrWhiteSpace($buildNumberProperty.InnerText)) {
+        $buildNumberProperty.InnerText = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
+        $project.Save((Resolve-Path $Path))
+    }
+
+    Write-Output $buildNumberProperty.InnerText
+}
+
 function Test-Parameters {
-    if ($Usage -or $Version) {
+    if ($Usage -or $Version -or $BuildNumber) {
         return
     }
 
@@ -452,6 +488,11 @@ try {
         }
 
         Show-ScriptVersion
+        return
+    }
+
+    if ($BuildNumber) {
+        Get-OrCreate-ProjectBuildNumber -Path $ProjectPath
         return
     }
 
