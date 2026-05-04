@@ -1,26 +1,35 @@
+[CmdletBinding(DefaultParameterSetName = "Version")]
 param(
+    [Parameter(Mandatory = $true, ParameterSetName = "Version")]
     [string]$ProjectPath,
 
+    [Parameter(Mandatory = $true, ParameterSetName = "Version")]
     [string]$Type,
 
+    [Parameter(ParameterSetName = "Version")]
     [string]$PrereleaseName,
 
+    [Parameter(ParameterSetName = "Version")]
     [string]$BuildName,
 
+    [Parameter(ParameterSetName = "Version")]
     [switch]$IsPrerelease,
 
+    [Parameter(ParameterSetName = "Version")]
     [switch]$IsNotPrerelease,
 
+    [Parameter(ParameterSetName = "Version")]
     [switch]$IsBuild,
 
+    [Parameter(ParameterSetName = "Version")]
     [switch]$IsNotBuild,
 
+    [Parameter(ParameterSetName = "Version")]
     [switch]$Stable,
 
+    [Parameter(Mandatory = $true, ParameterSetName = "Usage")]
     [switch]$Usage
 )
-
-$scriptBoundParameters = $PSBoundParameters
 
 function Show-Usage {
     Write-Host @"
@@ -78,10 +87,6 @@ Examples:
 
 function Test-Parameters {
     if ($Usage) {
-        if ($scriptBoundParameters.Count -ne 1) {
-            throw "Usage must be used alone, without any other parameter."
-        }
-
         return
     }
 
@@ -105,7 +110,7 @@ The script treats Version as the final SemVer value and NumVer as the numeric
 version core. Existing projects that only have Version can still be migrated:
 NumVer is created automatically from Version's core.
 #>
-function Normalize-SemVerCore {
+function ConvertTo-SemVerCore {
     param([string]$Version)
 
     if ([string]::IsNullOrWhiteSpace($Version)) {
@@ -132,7 +137,7 @@ function Normalize-SemVerCore {
 function Get-SemVerCoreParts {
     param([string]$Version)
 
-    $core = Normalize-SemVerCore $Version
+    $core = ConvertTo-SemVerCore $Version
     $parts = $core.Split(".")
 
     return @{
@@ -142,7 +147,7 @@ function Get-SemVerCoreParts {
     }
 }
 
-function Increment-SemVerCore {
+function Update-SemVerCore {
     param(
         [string]$Version,
         [string]$Type
@@ -154,7 +159,7 @@ function Increment-SemVerCore {
         "Major" { return "$($parts.Major + 1).0.0" }
         "Minor" { return "$($parts.Major).$($parts.Minor + 1).0" }
         "Patch" { return "$($parts.Major).$($parts.Minor).$($parts.Patch + 1)" }
-        "Stable" { return Normalize-SemVerCore $Version }
+        "Stable" { return ConvertTo-SemVerCore $Version }
         default { throw "Invalid increment type: $Type" }
     }
 }
@@ -254,14 +259,14 @@ function Update-ProjectVersion {
 
     $currentNumVer = $numVerProperty.InnerText
     if ([string]::IsNullOrWhiteSpace($currentNumVer)) {
-        $currentNumVer = Normalize-SemVerCore $versionProperty.InnerText
+        $currentNumVer = ConvertTo-SemVerCore $versionProperty.InnerText
     }
 
     if ([string]::IsNullOrWhiteSpace($currentNumVer)) {
         $currentNumVer = "0.0.0"
     }
 
-    $newCore = Increment-SemVerCore $currentNumVer $BumpType
+    $newCore = Update-SemVerCore $currentNumVer $BumpType
     $buildNumber = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
 
     $isVersionBump = $BumpType -in @("Major", "Minor", "Patch")

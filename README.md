@@ -59,11 +59,16 @@ Show help:
 ./Version.ps1 -Usage
 ```
 
-Basic syntax:
+`-Usage` is in its own parameter set. It cannot be combined with any versioning
+parameter.
+
+Versioning syntax:
 
 ```powershell
 ./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch|Stable> [options]
 ```
+
+`-ProjectPath` and `-Type` are required for the versioning parameter set.
 
 ## Version Types
 
@@ -293,14 +298,14 @@ After NumVer: 7.3.1
 - `-Stable` as a switch clears prerelease/build after incrementing.
 - `-IsNotPrerelease` overrides `-IsPrerelease`.
 - `-IsNotBuild` overrides `-IsBuild`.
-- `-Usage` must be used alone.
+- `-Usage` belongs to an exclusive parameter set and cannot be combined with versioning parameters.
 
 ## Running Tests
 
 Run:
 
 ```powershell
-./Version-Test.ps1
+./Version-Tests.ps1
 ```
 
 The test script creates temporary `.csproj` files under the system temp directory, runs `Version.ps1` against them, validates the results, and removes the temporary files after completion.
@@ -337,7 +342,7 @@ After BuildName:
 The tests cover:
 
 - usage output
-- invalid `-Usage` combinations
+- invalid `-Usage` parameter set combinations
 - stable promotion
 - stable promotion from prerelease
 - stable promotion from build metadata
@@ -349,7 +354,3 @@ The tests cover:
 - required build name validation
 - negative flag precedence
 - automatic clearing of stored prerelease/build values during version bumps
-
-## License
-
-Choose a license appropriate for your project, such as MIT.
