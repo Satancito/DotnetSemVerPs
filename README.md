@@ -4,6 +4,8 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
+Current script version: `1.0`.
+
 ## Features
 
 - Updates `.csproj` files directly.
@@ -14,6 +16,10 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 - Creates missing version properties automatically.
 - Includes a test script with common versioning scenarios.
 - Does not run Git commands.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## Version Properties
 

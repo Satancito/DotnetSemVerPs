@@ -31,11 +31,14 @@ param(
     [switch]$Usage
 )
 
+$ScriptVersion = "1.0"
+
 function Show-Usage {
     Write-Host @"
 Version.ps1
 
 Generates complete SemVer versions for .NET projects.
+Script version: $ScriptVersion
 
 Usage:
   ./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch|Stable> [options]
