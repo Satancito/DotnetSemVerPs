@@ -43,7 +43,7 @@ param(
     [switch]$Refresh
 )
 
-$ScriptVersion = "1.5.0"
+$ScriptVersion = "1.5.1"
 
 function Show-Usage {
     Write-Host @"
@@ -62,7 +62,7 @@ Usage:
 csproj properties:
   Version          Generated full SemVer value.
   NumVer           Numeric Major.Minor.Patch version.
-  BuildNumber      UTC epoch seconds. Recomputed on every run.
+  BuildNumber      UTC epoch seconds. Recomputed on every version update.
   PrereleaseName   Prerelease identifier, for example rc, rc2, rc2.1.
   BuildName        Build identifier, for example Build.
   IsPrerelease     true/false.
@@ -119,6 +119,10 @@ function Show-ScriptVersion {
     Write-Output $ScriptVersion
 }
 
+function New-BuildNumber {
+    return [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
+}
+
 function Get-ProjectVersion {
     param([string]$Path)
 
@@ -164,7 +168,7 @@ function Get-OrCreate-ProjectBuildNumber {
     }
 
     if ($ForceRefresh -or [string]::IsNullOrWhiteSpace($buildNumberProperty.InnerText)) {
-        $buildNumberProperty.InnerText = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
+        $buildNumberProperty.InnerText = New-BuildNumber
         $project.Save((Resolve-Path $Path))
     }
 
@@ -364,7 +368,7 @@ function Update-ProjectVersion {
     }
 
     $newCore = Update-SemVerCore $currentNumVer $BumpType
-    $buildNumber = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
+    $buildNumber = New-BuildNumber
 
     $isVersionBump = $BumpType -in @("Major", "Minor", "Patch")
     $effectiveIsPrerelease = if ($isVersionBump) { $false } else { Get-BoolProperty $propertyGroup "IsPrerelease" }

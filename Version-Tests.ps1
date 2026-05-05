@@ -219,7 +219,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.5.0" $output "Script version output must match"
+    Assert-Equal "1.5.1" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -485,6 +485,21 @@ function Test-BumpClearsStoredNames {
     Assert-Equal "" $project.BuildName "Bump must clear stored BuildName"
 }
 
+function Test-VersionUpdateRefreshesBuildNumber {
+    $path = New-TestProject -Version "7.3.0" -BuildNumber "1"
+    Invoke-Version $path @{ Type = "Patch" }
+    $project = Read-Project $path
+
+    Assert-Match $project.BuildNumber '^\d+$' "Version update must store BuildNumber epoch"
+    if ($project.BuildNumber -eq "1") {
+        throw "Version update must refresh an existing BuildNumber."
+    }
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Type Patch"
+    Write-Host "Refreshed BuildNumber: $($project.BuildNumber)"
+    Write-TestSeparator
+}
+
 function Test-PrereleaseNameRequired {
     $path = New-TestProject -Version "7.3.0"
     Invoke-VersionExpectFailure $path @{ Type = "Patch"; IsPrerelease = $true }
@@ -584,6 +599,7 @@ try {
     Test-BuildFromParameter
     Test-PrereleaseAndBuild
     Test-BumpClearsStoredNames
+    Test-VersionUpdateRefreshesBuildNumber
     Test-PrereleaseNameRequired
     Test-BuildNameRequired
     Test-NegativeFlagsWin

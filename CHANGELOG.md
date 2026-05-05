@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.5.1 - 2026-05-04
+
+### Changed
+
+- Updated version changes to explicitly refresh the project `BuildNumber` on each version update while keeping `-BuildNumber` as a read-or-create command.
+
 ## 1.5.0 - 2026-05-04
 
 ### Added
