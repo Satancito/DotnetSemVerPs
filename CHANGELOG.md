@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.7.1 - 2026-05-05
+
+### Added
+
+- Added `LEEME.md` as the Spanish equivalent of `README.md`.
+- Linked the English and Spanish documentation files to each other.
+
 ## 1.7.0 - 2026-05-05
 
 ### Added

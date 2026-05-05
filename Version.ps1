@@ -46,7 +46,7 @@ param(
     [switch]$Refresh
 )
 
-$ScriptVersion = "1.7.0"
+$ScriptVersion = "1.7.1"
 $DefaultInitialVersionCore = "0.1.0"
 
 function Show-Usage {
