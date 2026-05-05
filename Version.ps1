@@ -46,7 +46,7 @@ param(
     [switch]$Refresh
 )
 
-$ScriptVersion = "1.6.0"
+$ScriptVersion = "1.7.0"
 $DefaultInitialVersionCore = "0.1.0"
 
 function Show-Usage {
@@ -103,6 +103,7 @@ Rules:
   Major, Minor, and Patch clear stored prerelease/build values unless explicitly enabled.
   Stable as Type does not increment the version; it only promotes to stable.
   Release requires a valid Git repository and fails before saving if the generated tag already exists.
+  Release requires all existing repository changes to be staged before it runs.
   WhatIf calculates and prints the result without writing changes to the project file.
   If IsPrerelease ends as true, PrereleaseName is required.
   If IsBuild ends as true, BuildName is required.
@@ -241,6 +242,24 @@ function Assert-GitTagAvailable {
 
     if (Test-GitTagExists -RepositoryPath $RepositoryPath -TagName $TagName) {
         throw "Tag already exists: $TagName. Release stopped before saving project changes."
+    }
+}
+
+function Assert-GitHasNoPendingAdd {
+    param([string]$RepositoryPath)
+
+    $result = Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("status", "--porcelain")
+    $pendingAddItems = @()
+
+    foreach ($line in @($result.Output)) {
+        $text = $line.ToString()
+        if ($text.StartsWith("??") -or ($text.Length -ge 2 -and $text[1] -ne " ")) {
+            $pendingAddItems += $text
+        }
+    }
+
+    if ($pendingAddItems.Count -gt 0) {
+        throw "Release requires all repository changes to be staged before it runs. Pending git add items: $($pendingAddItems -join '; ')"
     }
 }
 
@@ -598,8 +617,9 @@ try {
 
     if ($Release -and -not $WhatIfPreference) {
         $releaseBuildNumber = New-BuildNumber
-        $preview = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber
         $repositoryRoot = Get-GitRepositoryRoot -Path $ProjectPath
+        Assert-GitHasNoPendingAdd -RepositoryPath $repositoryRoot
+        $preview = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber
         Assert-GitTagAvailable -RepositoryPath $repositoryRoot -TagName $preview.Next.Version
 
         $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $false -BuildNumberOverride $releaseBuildNumber

@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.7.0 - 2026-05-05
+
+### Added
+
+- Added a `-Release` guard that stops before saving when the repository has untracked or unstaged files pending `git add`.
+
 ## 1.6.0 - 2026-05-05
 
 ### Added

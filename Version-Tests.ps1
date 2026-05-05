@@ -344,7 +344,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.6.0" $output "Script version output must match"
+    Assert-Equal "1.7.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -756,6 +756,46 @@ function Test-ReleaseFailsBeforeSavingWhenTagExists {
     Write-TestSeparator
 }
 
+function Test-ReleaseFailsBeforeSavingWhenPendingAddExists {
+    $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0"
+    $path = $fixture.ProjectPath
+    $repositoryPath = $fixture.RepositoryPath
+    $untrackedPath = Join-Path $repositoryPath "notes.txt"
+    Set-Content -Path $untrackedPath -Value "Untracked release note." -Encoding UTF8
+
+    $headBefore = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD")
+    $errorMessage = $null
+
+    try {
+        Invoke-WithIsolatedGitEnvironment {
+            & $scriptPath -ProjectPath $path -Type Patch -Release *> $null
+        }
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+    }
+
+    if ($null -eq $errorMessage) {
+        throw "Expected failure because release has pending git add items."
+    }
+
+    $project = Read-Project $path
+    $headAfter = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD")
+    $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.3.1")
+    $tagText = ($tag -join "")
+
+    Assert-Equal "7.3.0" $project.Version "Release must not save project when pending git add items exist"
+    Assert-Equal "7.3.0" $project.NumVer "Release must not save NumVer when pending git add items exist"
+    Assert-Equal $headBefore $headAfter "Release must not create a commit when pending git add items exist"
+    Assert-Equal "" $tagText "Release must not create a tag when pending git add items exist"
+    Assert-Match $errorMessage "Release requires all repository changes to be staged" "Release must explain pending git add failure"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Type Patch -Release"
+    Write-Host "Expected Failure: True"
+    Write-Host "Error: $errorMessage"
+    Write-TestSeparator
+}
+
 function Test-PrereleaseNameRequired {
     $path = New-TestProject -Version "7.3.0"
     Invoke-VersionExpectFailure $path @{ Type = "Patch"; IsPrerelease = $true }
@@ -861,6 +901,7 @@ try {
     Test-ReleaseCreatesCommitAndTag
     Test-ReleaseWorksFromProjectSubdirectory
     Test-ReleaseFailsBeforeSavingWhenTagExists
+    Test-ReleaseFailsBeforeSavingWhenPendingAddExists
     Test-PrereleaseNameRequired
     Test-BuildNameRequired
     Test-NegativeFlagsWin

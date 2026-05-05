@@ -4,9 +4,9 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.6.0`.
+Current script version: `1.7.0`.
 
-## Features
+### Features
 
 - Updates `.csproj` files directly.
 - Stores the full SemVer value in `Version`.
@@ -17,11 +17,11 @@ Current script version: `1.6.0`.
 - Can create local Git release commits and SemVer tags with `-Release`.
 - Includes a test script with common versioning scenarios.
 
-## Changelog
+### Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
-## Version Properties
+### Version Properties
 
 The script manages these properties in the target `.csproj`:
 
@@ -49,7 +49,7 @@ When both `Version` and `NumVer` are missing or empty, the script starts from
 `0.1.0` as the initial development version. Version updates then apply the
 requested type from that base, so `-Type Patch` produces `0.1.1`.
 
-## SemVer Output
+### SemVer Output
 
 Supported formats:
 
@@ -61,7 +61,7 @@ Supported formats:
 7.3.0-rc2.1+Build.995269
 ```
 
-## Usage
+### Usage
 
 Show help:
 
@@ -120,13 +120,16 @@ Create a local release commit and tag:
 ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -Release
 ```
 
-`-Release` first locates the Git repository that contains the `.csproj`, even
-when the project is inside a solution subfolder, then calculates the next version
-and verifies that the matching Git tag does not already exist. If the tag exists,
-the script stops before saving the project file, avoiding unnecessary commits. If
-the tag is available, the script updates the `.csproj`, commits that project file
-with `Release <version>`, and creates a local tag named exactly as the generated
-SemVer value. It does not push.
+`-Release` first locates the Git repository that contains the `.csproj` by
+searching upward from the project file's folder. The project can be nested any
+number of folders inside the repository; it only needs to be inside a valid Git
+repo. The script then verifies that there are no untracked or unstaged files
+pending `git add`, calculates the next version, and checks that the matching Git
+tag does not already exist. If either check fails, the script stops before saving
+the project file, avoiding unnecessary commits. If the release is valid, the
+script updates the `.csproj`, commits that project file with `Release <version>`,
+and creates a local tag named exactly as the generated SemVer value. It does not
+push.
 
 Preview without saving:
 
@@ -154,9 +157,9 @@ NumVer: 7.3.1
 WhatIf: True
 ```
 
-## Version Types
+### Version Types
 
-### Patch
+#### Patch
 
 Increments patch and clears stored prerelease/build values by default.
 
@@ -174,7 +177,7 @@ After Version: 7.3.1
 After NumVer: 7.3.1
 ```
 
-### Minor
+#### Minor
 
 Increments minor, resets patch, and clears stored prerelease/build values by default.
 
@@ -188,7 +191,7 @@ Example:
 7.3.0 -> 7.4.0
 ```
 
-### Major
+#### Major
 
 Increments major, resets minor/patch, and clears stored prerelease/build values by default.
 
@@ -202,7 +205,7 @@ Example:
 7.3.9 -> 8.0.0
 ```
 
-### Stable
+#### Stable
 
 Promotes the current numeric version to stable without incrementing `NumVer`.
 
@@ -218,7 +221,7 @@ Example:
 7.3.0+Build.123 -> 7.3.0
 ```
 
-## Prerelease Versions
+### Prerelease Versions
 
 Use `-IsPrerelease` and `-PrereleaseName`.
 
@@ -252,7 +255,7 @@ Expected error:
 PrereleaseName cannot be empty.
 ```
 
-## Build Metadata
+### Build Metadata
 
 Use `-IsBuild` and `-BuildName`.
 
@@ -286,7 +289,7 @@ Expected error:
 BuildName cannot be empty.
 ```
 
-## Prerelease And Build Metadata
+### Prerelease And Build Metadata
 
 ```powershell
 ./Version.ps1 `
@@ -310,11 +313,11 @@ PrereleaseName: rc2.1
 BuildName: Build
 ```
 
-## Negative Flags
+### Negative Flags
 
 Negative flags override positive flags.
 
-### Disable Prerelease
+#### Disable Prerelease
 
 ```powershell
 ./Version.ps1 `
@@ -334,7 +337,7 @@ IsPrerelease: False
 IsBuild: True
 ```
 
-### Disable Build
+#### Disable Build
 
 ```powershell
 ./Version.ps1 `
@@ -354,7 +357,7 @@ IsPrerelease: True
 IsBuild: False
 ```
 
-## Stable Switch
+### Stable Switch
 
 `-Stable` can be combined with `Major`, `Minor`, or `Patch` to increment the numeric version but force the result to be stable.
 
@@ -372,7 +375,7 @@ After Version: 7.3.1
 After NumVer: 7.3.1
 ```
 
-## Rules
+### Rules
 
 - `Version` stores the final SemVer value.
 - `NumVer` stores only `Major.Minor.Patch`.
@@ -382,6 +385,7 @@ After NumVer: 7.3.1
 - `Stable` as `Type` does not increment `NumVer`.
 - `-Stable` as a switch clears prerelease/build after incrementing.
 - `-Release` requires the `.csproj` folder or one of its parent folders to be a valid Git repository.
+- `-Release` requires no untracked or unstaged files pending `git add` before it runs.
 - `-Release` creates a local commit and tag after validating that the tag does not exist.
 - `-IsNotPrerelease` overrides `-IsPrerelease`.
 - `-IsNotBuild` overrides `-IsBuild`.
@@ -392,7 +396,7 @@ After NumVer: 7.3.1
 - `-ProjectPath <path.csproj> -BuildNumber` returns the current project `BuildNumber` value and creates it if missing.
 - `-ProjectPath <path.csproj> -BuildNumber -Refresh` creates a new project `BuildNumber` value and returns it.
 
-## Running Tests
+### Running Tests
 
 Run:
 
