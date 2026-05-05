@@ -2,6 +2,48 @@ $ErrorActionPreference = "Stop"
 
 $scriptPath = Join-Path $PSScriptRoot "Version.ps1"
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("VersionTests-" + [Guid]::NewGuid().ToString("N"))
+$testGitHome = Join-Path $testRoot "GitHome"
+$testGitConfig = Join-Path $testGitHome ".gitconfig"
+
+function Invoke-WithIsolatedGitEnvironment {
+    param([scriptblock]$ScriptBlock)
+
+    New-Item -ItemType Directory -Path $testGitHome -Force | Out-Null
+    if (-not (Test-Path $testGitConfig)) {
+        Set-Content -Path $testGitConfig -Value "" -Encoding UTF8
+    }
+
+    $names = @("GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "HOME", "USERPROFILE", "XDG_CONFIG_HOME")
+    $saved = @{}
+
+    foreach ($name in $names) {
+        $item = Get-Item -Path "Env:$name" -ErrorAction SilentlyContinue
+        if ($null -ne $item) {
+            $saved[$name] = $item.Value
+        } else {
+            $saved[$name] = $null
+        }
+    }
+
+    try {
+        $env:GIT_CONFIG_GLOBAL = $testGitConfig
+        $env:GIT_CONFIG_NOSYSTEM = "1"
+        $env:HOME = $testGitHome
+        $env:USERPROFILE = $testGitHome
+        $env:XDG_CONFIG_HOME = $testGitHome
+
+        & $ScriptBlock
+    }
+    finally {
+        foreach ($name in $names) {
+            if ($null -eq $saved[$name]) {
+                Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
+            } else {
+                Set-Item -Path "Env:$name" -Value $saved[$name]
+            }
+        }
+    }
+}
 
 function New-TestProject {
     param(
@@ -34,6 +76,89 @@ function New-TestProject {
 
     Set-Content -Path $path -Value $content -Encoding UTF8
     return $path
+}
+
+function New-TestProjectWithoutVersionProperties {
+    New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+    $path = Join-Path $testRoot ([Guid]::NewGuid().ToString("N") + ".csproj")
+
+    $content = @"
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>
+"@
+
+    Set-Content -Path $path -Value $content -Encoding UTF8
+    return $path
+}
+
+function Invoke-TestGit {
+    param(
+        [string]$RepositoryPath,
+        [string[]]$Arguments
+    )
+
+    $result = Invoke-WithIsolatedGitEnvironment {
+        $gitOutput = & git -C $RepositoryPath @Arguments 2>&1
+        return @{
+            ExitCode = $LASTEXITCODE
+            Output = $gitOutput
+        }
+    }
+
+    if ($result.ExitCode -ne 0) {
+        throw "Git test command failed: git -C $RepositoryPath $($Arguments -join ' '). $($result.Output -join ' ')"
+    }
+
+    return $result.Output
+}
+
+function New-TestGitProject {
+    param(
+        [string]$Version = "7.3.0",
+        [string]$NumVer = "7.3.0",
+        [string]$ProjectRelativeDirectory = ""
+    )
+
+    New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+    $repositoryPath = Join-Path $testRoot ([Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $repositoryPath -Force | Out-Null
+
+    $projectDirectory = $repositoryPath
+    if (-not [string]::IsNullOrWhiteSpace($ProjectRelativeDirectory)) {
+        $projectDirectory = Join-Path $repositoryPath $ProjectRelativeDirectory
+        New-Item -ItemType Directory -Path $projectDirectory -Force | Out-Null
+    }
+
+    $path = Join-Path $projectDirectory "MyProject.csproj"
+    $content = @"
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Version>$Version</Version>
+    <NumVer>$NumVer</NumVer>
+    <BuildNumber></BuildNumber>
+    <PrereleaseName></PrereleaseName>
+    <BuildName></BuildName>
+    <IsPrerelease>False</IsPrerelease>
+    <IsBuild>False</IsBuild>
+  </PropertyGroup>
+</Project>
+"@
+
+    Set-Content -Path $path -Value $content -Encoding UTF8
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("init") | Out-Null
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("config", "user.email", "version-tests@example.local") | Out-Null
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("config", "user.name", "Version Tests") | Out-Null
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("add", "--", $path) | Out-Null
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("commit", "-m", "Initial project") | Out-Null
+
+    return @{
+        RepositoryPath = $repositoryPath
+        ProjectPath = $path
+    }
 }
 
 function Read-Project {
@@ -219,7 +344,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.5.1" $output "Script version output must match"
+    Assert-Equal "1.6.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -500,6 +625,137 @@ function Test-VersionUpdateRefreshesBuildNumber {
     Write-TestSeparator
 }
 
+function Test-MissingVersionStartsFromDefaultInitialVersion {
+    $path = New-TestProjectWithoutVersionProperties
+    Invoke-Version $path @{ Type = "Stable" }
+    $project = Read-Project $path
+
+    Assert-Equal "0.1.0" $project.Version "Missing Version and NumVer must start from the default initial version"
+    Assert-Equal "0.1.0" $project.NumVer "Missing NumVer must store the default initial version"
+    Assert-Match $project.BuildNumber '^\d+$' "Default initial version must still store BuildNumber epoch"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Type Stable"
+    Write-Host "Default Initial Version: $($project.Version)"
+    Write-TestSeparator
+}
+
+function Test-MissingVersionPatchBumpsFromDefaultInitialVersion {
+    $path = New-TestProjectWithoutVersionProperties
+    Invoke-Version $path @{ Type = "Patch" }
+    $project = Read-Project $path
+
+    Assert-Equal "0.1.1" $project.Version "Patch must bump from the default initial version"
+    Assert-Equal "0.1.1" $project.NumVer "Patch must store the bumped default initial version"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Type Patch"
+    Write-Host "Default Initial Patch Version: $($project.Version)"
+    Write-TestSeparator
+}
+
+function Test-ReleaseCreatesCommitAndTag {
+    $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0"
+    $path = $fixture.ProjectPath
+    $repositoryPath = $fixture.RepositoryPath
+
+    $result = Invoke-WithIsolatedGitEnvironment {
+        $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
+        return @{
+            ExitCode = $LASTEXITCODE
+            Output = $scriptOutput
+        }
+    }
+
+    if ($null -ne $result.ExitCode -and $result.ExitCode -ne 0) {
+        throw "Version.ps1 -Release failed with exit code $($result.ExitCode)."
+    }
+
+    $output = $result.Output
+
+    $project = Read-Project $path
+    $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.3.1")
+    $subject = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("log", "-1", "--pretty=%s")
+
+    Assert-Equal "7.3.1" $project.Version "Release must update Version"
+    Assert-Equal "7.3.1" $project.NumVer "Release must update NumVer"
+    Assert-Equal "7.3.1" $tag "Release must create a matching tag"
+    Assert-Equal "Release 7.3.1" $subject "Release must create a matching commit"
+    Assert-Match ($output -join "`n") "Release: True" "Release output must indicate release mode"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Type Patch -Release"
+    Write-Host "Release Tag: $tag"
+    Write-TestSeparator
+}
+
+function Test-ReleaseWorksFromProjectSubdirectory {
+    $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0" -ProjectRelativeDirectory "src/MyProject"
+    $path = $fixture.ProjectPath
+    $repositoryPath = $fixture.RepositoryPath
+
+    $result = Invoke-WithIsolatedGitEnvironment {
+        $scriptOutput = & $scriptPath -ProjectPath $path -Type Minor -Release *>&1
+        return @{
+            ExitCode = $LASTEXITCODE
+            Output = $scriptOutput
+        }
+    }
+
+    if ($null -ne $result.ExitCode -and $result.ExitCode -ne 0) {
+        throw "Version.ps1 -Release from subdirectory failed with exit code $($result.ExitCode)."
+    }
+
+    $output = $result.Output
+
+    $project = Read-Project $path
+    $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.4.0")
+    $subject = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("log", "-1", "--pretty=%s")
+
+    Assert-Equal "7.4.0" $project.Version "Release from subdirectory must update Version"
+    Assert-Equal "7.4.0" $project.NumVer "Release from subdirectory must update NumVer"
+    Assert-Equal "7.4.0" $tag "Release from subdirectory must create a matching tag in the parent repository"
+    Assert-Equal "Release 7.4.0" $subject "Release from subdirectory must create a matching commit in the parent repository"
+    Assert-Match ($output -join "`n") "Release: True" "Release from subdirectory output must indicate release mode"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Type Minor -Release"
+    Write-Host "Release Subdirectory Tag: $tag"
+    Write-TestSeparator
+}
+
+function Test-ReleaseFailsBeforeSavingWhenTagExists {
+    $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0"
+    $path = $fixture.ProjectPath
+    $repositoryPath = $fixture.RepositoryPath
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "7.3.1") | Out-Null
+
+    $headBefore = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD")
+    $errorMessage = $null
+
+    try {
+        Invoke-WithIsolatedGitEnvironment {
+            & $scriptPath -ProjectPath $path -Type Patch -Release *> $null
+        }
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+    }
+
+    if ($null -eq $errorMessage) {
+        throw "Expected failure because release tag already exists."
+    }
+
+    $project = Read-Project $path
+    $headAfter = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD")
+
+    Assert-Equal "7.3.0" $project.Version "Release must not save project when tag already exists"
+    Assert-Equal "7.3.0" $project.NumVer "Release must not save NumVer when tag already exists"
+    Assert-Equal $headBefore $headAfter "Release must not create a commit when tag already exists"
+    Assert-Match $errorMessage "Tag already exists: 7\.3\.1" "Release must explain existing tag failure"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Type Patch -Release"
+    Write-Host "Expected Failure: True"
+    Write-Host "Error: $errorMessage"
+    Write-TestSeparator
+}
+
 function Test-PrereleaseNameRequired {
     $path = New-TestProject -Version "7.3.0"
     Invoke-VersionExpectFailure $path @{ Type = "Patch"; IsPrerelease = $true }
@@ -600,6 +856,11 @@ try {
     Test-PrereleaseAndBuild
     Test-BumpClearsStoredNames
     Test-VersionUpdateRefreshesBuildNumber
+    Test-MissingVersionStartsFromDefaultInitialVersion
+    Test-MissingVersionPatchBumpsFromDefaultInitialVersion
+    Test-ReleaseCreatesCommitAndTag
+    Test-ReleaseWorksFromProjectSubdirectory
+    Test-ReleaseFailsBeforeSavingWhenTagExists
     Test-PrereleaseNameRequired
     Test-BuildNameRequired
     Test-NegativeFlagsWin

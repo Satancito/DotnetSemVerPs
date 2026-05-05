@@ -29,6 +29,9 @@ param(
     [Parameter(ParameterSetName = "Update")]
     [switch]$Stable,
 
+    [Parameter(ParameterSetName = "Update")]
+    [switch]$Release,
+
     [Parameter(Mandatory = $true, ParameterSetName = "Usage")]
     [switch]$Usage,
 
@@ -43,7 +46,8 @@ param(
     [switch]$Refresh
 )
 
-$ScriptVersion = "1.5.1"
+$ScriptVersion = "1.6.0"
+$DefaultInitialVersionCore = "0.1.0"
 
 function Show-Usage {
     Write-Host @"
@@ -82,6 +86,7 @@ Options:
   -BuildName <name>          Build name. If omitted, uses the csproj value.
   -IsNotBuild                Disables build. Takes precedence over -IsBuild.
   -Stable                    Clears prerelease/build after the increment.
+  -Release                   Commits the updated project and creates a Git tag for the generated Version.
   -WhatIf                    Shows the generated result without saving the project file.
   -Usage                     Shows this help. Must be used alone.
   -Version                   Shows the script version when used alone, or the project Version with -ProjectPath.
@@ -94,8 +99,10 @@ Rules:
   -BuildNumber must be used with only ProjectPath, optionally with Refresh.
   Version stores the final SemVer value.
   NumVer stores only Major.Minor.Patch.
+  Missing Version and NumVer values start from 0.1.0.
   Major, Minor, and Patch clear stored prerelease/build values unless explicitly enabled.
   Stable as Type does not increment the version; it only promotes to stable.
+  Release requires a valid Git repository and fails before saving if the generated tag already exists.
   WhatIf calculates and prints the result without writing changes to the project file.
   If IsPrerelease ends as true, PrereleaseName is required.
   If IsBuild ends as true, BuildName is required.
@@ -107,6 +114,7 @@ Examples:
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -IsBuild -BuildName Build
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -IsPrerelease -PrereleaseName rc2.1 -IsBuild -BuildName Build
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Stable
+  ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -Release
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -WhatIf
   `$projectVersion = & ./Version.ps1 -ProjectPath ./MyProject.csproj -Version
   `$projectBuildNumber = & ./Version.ps1 -ProjectPath ./MyProject.csproj -BuildNumber
@@ -175,6 +183,81 @@ function Get-OrCreate-ProjectBuildNumber {
     Write-Output $buildNumberProperty.InnerText
 }
 
+function Invoke-GitCommand {
+    param(
+        [string]$RepositoryPath,
+        [string[]]$Arguments,
+        [bool]$IgnoreFailure = $false
+    )
+
+    $output = & git -C $RepositoryPath @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -ne 0 -and -not $IgnoreFailure) {
+        throw "Git command failed: git -C $RepositoryPath $($Arguments -join ' '). $($output -join ' ')"
+    }
+
+    return @{
+        ExitCode = $exitCode
+        Output = $output
+    }
+}
+
+function Get-GitRepositoryRoot {
+    param([string]$Path)
+
+    $directory = if (Test-Path $Path -PathType Leaf) {
+        Split-Path -Parent (Resolve-Path $Path)
+    } else {
+        Resolve-Path $Path
+    }
+
+    $result = Invoke-GitCommand -RepositoryPath $directory -Arguments @("rev-parse", "--show-toplevel") -IgnoreFailure $true
+    $outputLines = @($result.Output)
+    if ($result.ExitCode -ne 0 -or $outputLines.Count -eq 0) {
+        throw "Release requires ProjectPath to be inside a valid Git repository."
+    }
+
+    return $outputLines[0].ToString().Trim()
+}
+
+function Test-GitTagExists {
+    param(
+        [string]$RepositoryPath,
+        [string]$TagName
+    )
+
+    $result = Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("rev-parse", "-q", "--verify", "refs/tags/$TagName") -IgnoreFailure $true
+    return $result.ExitCode -eq 0
+}
+
+function Assert-GitTagAvailable {
+    param(
+        [string]$RepositoryPath,
+        [string]$TagName
+    )
+
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("check-ref-format", "refs/tags/$TagName") | Out-Null
+
+    if (Test-GitTagExists -RepositoryPath $RepositoryPath -TagName $TagName) {
+        throw "Tag already exists: $TagName. Release stopped before saving project changes."
+    }
+}
+
+function Complete-GitRelease {
+    param(
+        [string]$RepositoryPath,
+        [string]$ProjectPath,
+        [string]$Version
+    )
+
+    $resolvedProjectPath = (Resolve-Path $ProjectPath).Path
+
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("add", "--", $resolvedProjectPath) | Out-Null
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("commit", "-m", "Release $Version", "--", $resolvedProjectPath) | Out-Null
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("tag", $Version) | Out-Null
+}
+
 function Test-Parameters {
     if ($Usage -or $Version -or $BuildNumber) {
         return
@@ -222,6 +305,10 @@ function ConvertTo-SemVerCore {
     }
 
     return $core
+}
+
+function Get-InitialSemVerCore {
+    return $DefaultInitialVersionCore
 }
 
 function Get-SemVerCoreParts {
@@ -326,7 +413,8 @@ function Update-ProjectVersion {
     param(
         [string]$Path,
         [string]$BumpType,
-        [bool]$PreviewOnly = $false
+        [bool]$PreviewOnly = $false,
+        [string]$BuildNumberOverride = ""
     )
 
     if (-not (Test-Path $Path)) {
@@ -359,16 +447,16 @@ function Update-ProjectVersion {
     }
 
     $currentNumVer = $numVerProperty.InnerText
-    if ([string]::IsNullOrWhiteSpace($currentNumVer)) {
+    if ([string]::IsNullOrWhiteSpace($currentNumVer) -and -not [string]::IsNullOrWhiteSpace($versionProperty.InnerText)) {
         $currentNumVer = ConvertTo-SemVerCore $versionProperty.InnerText
     }
 
     if ([string]::IsNullOrWhiteSpace($currentNumVer)) {
-        $currentNumVer = "0.0.0"
+        $currentNumVer = Get-InitialSemVerCore
     }
 
     $newCore = Update-SemVerCore $currentNumVer $BumpType
-    $buildNumber = New-BuildNumber
+    $buildNumber = if ([string]::IsNullOrWhiteSpace($BuildNumberOverride)) { New-BuildNumber } else { $BuildNumberOverride }
 
     $isVersionBump = $BumpType -in @("Major", "Minor", "Patch")
     $effectiveIsPrerelease = if ($isVersionBump) { $false } else { Get-BoolProperty $propertyGroup "IsPrerelease" }
@@ -508,7 +596,17 @@ try {
         return
     }
 
-    $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $WhatIfPreference
+    if ($Release -and -not $WhatIfPreference) {
+        $releaseBuildNumber = New-BuildNumber
+        $preview = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber
+        $repositoryRoot = Get-GitRepositoryRoot -Path $ProjectPath
+        Assert-GitTagAvailable -RepositoryPath $repositoryRoot -TagName $preview.Next.Version
+
+        $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $false -BuildNumberOverride $releaseBuildNumber
+        Complete-GitRelease -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -Version $result.Next.Version
+    } else {
+        $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $WhatIfPreference
+    }
 
     if ($result.WhatIf) {
         Write-SectionTitle "Current"
@@ -529,6 +627,7 @@ try {
     Write-Host "IsPrerelease: $($result.Next.IsPrerelease)"
     Write-Host "IsBuild: $($result.Next.IsBuild)"
     Write-Host "WhatIf: $($result.WhatIf)"
+    Write-Host "Release: $($Release -and -not $result.WhatIf)"
     Write-Host "PrereleaseName: $($result.Next.PrereleaseName)"
     Write-Host "BuildName: $($result.Next.BuildName)"
 }

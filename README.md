@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.5.1`.
+Current script version: `1.6.0`.
 
 ## Features
 
@@ -12,10 +12,10 @@ Current script version: `1.5.1`.
 - Stores the full SemVer value in `Version`.
 - Stores the numeric version core in `NumVer`.
 - Supports stable versions, prerelease versions, build metadata versions, and prerelease plus build metadata versions.
-- Generates `BuildNumber` as UTC epoch seconds on every run.
+- Generates `BuildNumber` as UTC epoch seconds on every version update.
 - Creates missing version properties automatically.
+- Can create local Git release commits and SemVer tags with `-Release`.
 - Includes a test script with common versioning scenarios.
-- Does not run Git commands.
 
 ## Changelog
 
@@ -39,11 +39,15 @@ The script manages these properties in the target `.csproj`:
 |---|---|
 | `Version` | Full generated SemVer value. |
 | `NumVer` | Numeric version only: `Major.Minor.Patch`. |
-| `BuildNumber` | UTC epoch seconds generated on each run. |
+| `BuildNumber` | UTC epoch seconds generated on each version update. |
 | `PrereleaseName` | Prerelease identifier, for example `rc`, `rc2`, `rc2.1`. |
 | `BuildName` | Build metadata prefix, for example `Build`. |
 | `IsPrerelease` | Indicates whether prerelease should be used. |
 | `IsBuild` | Indicates whether build metadata should be used. |
+
+When both `Version` and `NumVer` are missing or empty, the script starts from
+`0.1.0` as the initial development version. Version updates then apply the
+requested type from that base, so `-Type Patch` produces `0.1.1`.
 
 ## SemVer Output
 
@@ -109,6 +113,20 @@ Versioning syntax:
 ```
 
 `-ProjectPath` and `-Type` are required for the versioning parameter set.
+
+Create a local release commit and tag:
+
+```powershell
+./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -Release
+```
+
+`-Release` first locates the Git repository that contains the `.csproj`, even
+when the project is inside a solution subfolder, then calculates the next version
+and verifies that the matching Git tag does not already exist. If the tag exists,
+the script stops before saving the project file, avoiding unnecessary commits. If
+the tag is available, the script updates the `.csproj`, commits that project file
+with `Release <version>`, and creates a local tag named exactly as the generated
+SemVer value. It does not push.
 
 Preview without saving:
 
@@ -358,10 +376,13 @@ After NumVer: 7.3.1
 
 - `Version` stores the final SemVer value.
 - `NumVer` stores only `Major.Minor.Patch`.
-- `BuildNumber` is recalculated on every run.
+- Missing `Version` and `NumVer` values start from `0.1.0`.
+- `BuildNumber` is recalculated on every version update.
 - `Major`, `Minor`, and `Patch` clear stored prerelease/build values by default.
 - `Stable` as `Type` does not increment `NumVer`.
 - `-Stable` as a switch clears prerelease/build after incrementing.
+- `-Release` requires the `.csproj` folder or one of its parent folders to be a valid Git repository.
+- `-Release` creates a local commit and tag after validating that the tag does not exist.
 - `-IsNotPrerelease` overrides `-IsPrerelease`.
 - `-IsNotBuild` overrides `-IsBuild`.
 - `-WhatIf` previews current and next generated values without saving the project file.
@@ -380,6 +401,8 @@ Run:
 ```
 
 The test script creates temporary `.csproj` files under the system temp directory, runs `Version.ps1` against them, validates the results, and removes the temporary files after completion.
+
+Git release tests create isolated temporary repositories outside this project. They also run with temporary Git environment values for `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM`, `HOME`, `USERPROFILE`, and `XDG_CONFIG_HOME`, so they do not depend on this repository or the user's Git configuration.
 
 Expected final output:
 

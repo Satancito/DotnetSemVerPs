@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.6.0 - 2026-05-05
+
+### Added
+
+- Added `-Release` to validate that the generated SemVer tag is available, update the project, create a local `Release <version>` commit, and create a local tag without pushing.
+- Added isolated Git release tests that use temporary repositories and temporary Git environment configuration.
+
+## 1.5.2 - 2026-05-05
+
+### Changed
+
+- Changed the default initial version for projects without `Version` or `NumVer` from `0.0.0` to `0.1.0`.
+
 ## 1.5.1 - 2026-05-04
 
 ### Changed
