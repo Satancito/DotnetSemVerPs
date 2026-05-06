@@ -35,6 +35,9 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = "Usage")]
     [switch]$Usage,
 
+    [Parameter(Mandatory = $true, ParameterSetName = "Tests")]
+    [switch]$Tests,
+
     [Parameter(Mandatory = $true, ParameterSetName = "ScriptVersion")]
     [Parameter(Mandatory = $true, ParameterSetName = "ProjectVersion")]
     [switch]$Version,
@@ -43,11 +46,21 @@ param(
     [switch]$BuildNumber,
 
     [Parameter(ParameterSetName = "ProjectBuildNumber")]
-    [switch]$Refresh
+    [switch]$Refresh,
+
+    [Parameter(Mandatory = $true, ParameterSetName = "Validate")]
+    [switch]$Validate,
+
+    [Parameter(ParameterSetName = "Validate")]
+    [switch]$Detailed,
+
+    [Parameter(ParameterSetName = "Validate")]
+    [string]$SemVer
 )
 
-$ScriptVersion = "1.7.1"
+$ScriptVersion = "1.8.0"
 $DefaultInitialVersionCore = "0.1.0"
+$SemVerPattern = '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
 
 function Show-Usage {
     Write-Host @"
@@ -60,6 +73,8 @@ Usage:
   ./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch|Stable> [options]
   ./Version.ps1 -ProjectPath <path.csproj> -Version
   ./Version.ps1 -ProjectPath <path.csproj> -BuildNumber
+  ./Version.ps1 -Validate -SemVer <semver> [-Detailed]
+  ./Version.ps1 -Tests
   ./Version.ps1 -Version
   ./Version.ps1 -Usage
 
@@ -92,11 +107,17 @@ Options:
   -Version                   Shows the script version when used alone, or the project Version with -ProjectPath.
   -BuildNumber               Shows or creates the project BuildNumber with -ProjectPath.
   -Refresh                   Recomputes BuildNumber when used with -BuildNumber.
+  -Validate                  Validates a SemVer string passed with -SemVer.
+  -SemVer <semver>           SemVer string to validate when used with -Validate.
+  -Detailed                  Prints validation details to the host when used with -Validate.
+  -Tests                     Runs Version-Tests.ps1 when the test file exists.
 
 Rules:
   -Usage must be used alone, without any other parameter.
   -Version must be used alone for the script version, or with only ProjectPath for the project version.
   -BuildNumber must be used with only ProjectPath, optionally with Refresh.
+  -Validate must be used with -SemVer <semver>. It outputs the same version when valid, or empty output when invalid.
+  -Tests must be used alone.
   Version stores the final SemVer value.
   NumVer stores only Major.Minor.Patch.
   Missing Version and NumVer values start from 0.1.0.
@@ -117,6 +138,9 @@ Examples:
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Stable
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -Release
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -WhatIf
+  `$validated = & ./Version.ps1 -Validate -SemVer 1.2.3-rc.1+Build.5
+  `$validated = & ./Version.ps1 -Validate -SemVer 1.2.3-rc.1+Build.5 -Detailed
+  ./Version.ps1 -Tests
   `$projectVersion = & ./Version.ps1 -ProjectPath ./MyProject.csproj -Version
   `$projectBuildNumber = & ./Version.ps1 -ProjectPath ./MyProject.csproj -BuildNumber
   `$projectBuildNumber = & ./Version.ps1 -ProjectPath ./MyProject.csproj -BuildNumber -Refresh
@@ -130,6 +154,66 @@ function Show-ScriptVersion {
 
 function New-BuildNumber {
     return [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
+}
+
+function Invoke-Tests {
+    $testsPath = Join-Path $PSScriptRoot "Version-Tests.ps1"
+    if (-not (Test-Path $testsPath -PathType Leaf)) {
+        Write-Host "Tests not found: $testsPath"
+        return
+    }
+
+    & $testsPath
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+}
+
+function Test-SemVer {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    return [regex]::IsMatch($Value, $SemVerPattern)
+}
+
+function Get-SemVerValidationError {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return "Version cannot be empty."
+    }
+
+    if (Test-SemVer $Value) {
+        return ""
+    }
+
+    return "Version is not valid SemVer 2.0.0: $Value"
+}
+
+function Invoke-SemVerValidation {
+    param(
+        [string]$Value,
+        [bool]$ShowDetails = $false
+    )
+
+    $errorMessage = Get-SemVerValidationError $Value
+    if ([string]::IsNullOrWhiteSpace($errorMessage)) {
+        if ($ShowDetails) {
+            Write-Host "Valid SemVer: $Value"
+        }
+
+        Write-Output $Value
+        return
+    }
+
+    if ($ShowDetails) {
+        Write-Host $errorMessage
+    }
+
+    Write-Output ""
 }
 
 function Get-ProjectVersion {
@@ -278,7 +362,7 @@ function Complete-GitRelease {
 }
 
 function Test-Parameters {
-    if ($Usage -or $Version -or $BuildNumber) {
+    if ($Usage -or $Tests -or $Validate -or $Version -or $BuildNumber) {
         return
     }
 
@@ -363,14 +447,21 @@ function Update-SemVerCore {
 function Test-SemVerIdentifierList {
     param(
         [string]$Value,
-        [string]$Name
+        [string]$Name,
+        [bool]$AllowLeadingZeroNumericIdentifiers = $true
     )
 
     if ([string]::IsNullOrWhiteSpace($Value)) {
         throw "$Name cannot be empty."
     }
 
-    $pattern = '^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*$'
+    $identifier = if ($AllowLeadingZeroNumericIdentifiers) {
+        '[0-9A-Za-z-]+'
+    } else {
+        '(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)'
+    }
+
+    $pattern = "^$identifier(\.$identifier)*$"
     if ($Value -notmatch $pattern) {
         throw "$Name is not valid SemVer: $Value"
     }
@@ -519,11 +610,11 @@ function Update-ProjectVersion {
     }
 
     if ($effectiveIsPrerelease) {
-        Test-SemVerIdentifierList $effectivePrereleaseName "PrereleaseName"
+        Test-SemVerIdentifierList $effectivePrereleaseName "PrereleaseName" $false
     }
 
     if ($effectiveIsBuild) {
-        Test-SemVerIdentifierList $effectiveBuildName "BuildName"
+        Test-SemVerIdentifierList $effectiveBuildName "BuildName" $true
     }
 
     $semVer = $newCore
@@ -533,6 +624,11 @@ function Update-ProjectVersion {
 
     if ($effectiveIsBuild) {
         $semVer = "$semVer+$effectiveBuildName.$buildNumber"
+    }
+
+    $semVerError = Get-SemVerValidationError $semVer
+    if (-not [string]::IsNullOrWhiteSpace($semVerError)) {
+        throw $semVerError
     }
 
     if (-not $PreviewOnly) {
@@ -597,6 +693,25 @@ try {
 
     if ($Usage) {
         Show-Usage
+        return
+    }
+
+    if ($Tests) {
+        Invoke-Tests
+        return
+    }
+
+    if ($Validate) {
+        if ([string]::IsNullOrWhiteSpace($SemVer)) {
+            if ($Detailed) {
+                Write-Host "Validate requires -SemVer <semver>."
+            }
+
+            Write-Output ""
+            return
+        }
+
+        Invoke-SemVerValidation -Value $SemVer -ShowDetails $Detailed
         return
     }
 

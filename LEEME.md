@@ -4,7 +4,7 @@ Herramientas PowerShell para administrar versiones SemVer en archivos de proyect
 
 `DotnetSemVerPs` actualiza propiedades de version en archivos `.csproj`, soporta flujos estables, prerelease y metadata de build, genera build numbers como epoch UTC, e incluye un script de pruebas para validar escenarios de versionado.
 
-Version actual del script: `1.7.1`.
+Version actual del script: `1.8.0`.
 
 ### Funcionalidades
 
@@ -15,6 +15,8 @@ Version actual del script: `1.7.1`.
 - Genera `BuildNumber` como epoch UTC en cada actualizacion de version.
 - Crea automaticamente las propiedades de version faltantes.
 - Puede crear commits locales de release y tags SemVer con `-Release`.
+- Puede validar un string SemVer externo con `-Validate -SemVer <semver>`.
+- Puede ejecutar el script local de pruebas con `-Tests`.
 - Incluye un script de pruebas con escenarios comunes de versionado.
 
 ### Changelog
@@ -101,12 +103,41 @@ Leer la version del script:
 $scriptVersion = & ./Version.ps1 -Version
 ```
 
+Validar un valor SemVer externo:
+
+```powershell
+$validated = & ./Version.ps1 -Validate -SemVer 1.2.3-rc.1+Build.5
+```
+
+Imprimir detalles de validacion manteniendo limpia la salida capturable:
+
+```powershell
+$validated = & ./Version.ps1 -Validate -SemVer 1.2.3-rc.01 -Detailed
+```
+
+Ejecutar el script local de pruebas:
+
+```powershell
+./Version.ps1 -Tests
+```
+
 `-Usage` tiene su propio parameter set. `-Version` puede usarse solo para retornar
 la version del script, o con `-ProjectPath` para retornar el valor `Version` del
 `.csproj`. `-BuildNumber` puede usarse con `-ProjectPath` para retornar el valor
 actual `BuildNumber` del `.csproj`; si falta o esta vacio, el script crea uno
 con epoch UTC y lo retorna. Agrega `-Refresh` para forzar un nuevo valor epoch UTC
 y guardarlo en el proyecto.
+
+`-Validate -SemVer <semver>` retorna la misma version cuando es SemVer 2.0.0
+valido, o salida vacia cuando es invalida. `-Detailed` escribe la razon de
+validacion al host para que asignaciones como `$validated = & ./Version.ps1 ...`
+capturen solo la version o un valor vacio. La validacion usa la expresion regular
+recomendada por SemVer.org con named groups, adaptada a la sintaxis de named
+groups de .NET.
+
+`-Tests` ejecuta `Version-Tests.ps1` cuando existe junto a `Version.ps1`. Si el
+archivo de pruebas no existe, el script imprime que los tests no fueron
+encontrados.
 
 Sintaxis de versionado:
 
@@ -398,6 +429,10 @@ After NumVer: 7.3.1
 - `-ProjectPath <path.csproj> -Version` retorna el valor `Version` actual del proyecto.
 - `-ProjectPath <path.csproj> -BuildNumber` retorna el valor `BuildNumber` actual del proyecto y lo crea si falta.
 - `-ProjectPath <path.csproj> -BuildNumber -Refresh` crea un nuevo valor `BuildNumber` del proyecto y lo retorna.
+- `-Validate -SemVer <semver>` valida un string SemVer externo y retorna solo la version valida o salida vacia.
+- `-Tests` ejecuta `Version-Tests.ps1` cuando el archivo existe.
+- Los valores `Version` generados se validan contra la expresion regular de SemVer.org antes de guardarse.
+- `PrereleaseName` y `BuildName` deben ser listas de identificadores SemVer validas antes de usarse para generar `Version`.
 
 ### Ejecutar Pruebas
 
@@ -423,7 +458,10 @@ Salida final esperada:
 All tests passed.
 ```
 
-Cada prueba imprime el comando ejecutado y el estado de version antes/despues.
+Cada prueba imprime el comando ejecutado, el estado de version antes/despues, y
+un marcador verde `TEST <actual>/<total> PASS` antes de la linea separadora. Si
+una prueba se detiene antes de finalizar, el marcador se imprime en rojo como
+`FAIL`.
 
 Ejemplo de salida de pruebas:
 
@@ -449,7 +487,8 @@ IsPrerelease: False
 PrereleaseName:
 IsBuild: False
 BuildName:
--------------------------------------
+TEST 16/42 PASS
+────────────────────────────────────────────────────────────
 ```
 
 Las pruebas cubren:
@@ -457,6 +496,8 @@ Las pruebas cubren:
 - salida de usage
 - combinaciones invalidas del parameter set `-Usage`
 - salida de version del script
+- salida de validacion SemVer
+- ejecucion del parametro `-Tests`
 - combinaciones invalidas del parameter set `-Version`
 - salida de version del proyecto
 - combinaciones invalidas de `-Version` del proyecto
@@ -474,5 +515,6 @@ Las pruebas cubren:
 - generacion de prerelease + metadata de build
 - validacion de nombre prerelease requerido
 - validacion de nombre build requerido
+- validacion de identificadores prerelease/build invalidos
 - precedencia de flags negativos
 - limpieza automatica de valores prerelease/build guardados durante incrementos de version

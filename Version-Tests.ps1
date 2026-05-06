@@ -4,6 +4,8 @@ $scriptPath = Join-Path $PSScriptRoot "Version.ps1"
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("VersionTests-" + [Guid]::NewGuid().ToString("N"))
 $testGitHome = Join-Path $testRoot "GitHome"
 $testGitConfig = Join-Path $testGitHome ".gitconfig"
+$script:CompletedTests = 0
+$script:TotalTests = if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -eq "1") { 41 } else { 42 }
 
 function Invoke-WithIsolatedGitEnvironment {
     param([scriptblock]$ScriptBlock)
@@ -207,7 +209,18 @@ function Write-SectionTitle {
 }
 
 function Write-TestSeparator {
+    Write-TestStatus "PASS" Green
     Write-Host ("─" * 60)
+}
+
+function Write-TestStatus {
+    param(
+        [string]$Status,
+        [ConsoleColor]$Color
+    )
+
+    $script:CompletedTests++
+    Write-Host ("TEST {0}/{1} {2}" -f $script:CompletedTests, $script:TotalTests, $Status) -ForegroundColor $Color
 }
 
 function Write-TestVersionState {
@@ -344,10 +357,89 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.7.1" $output "Script version output must match"
+    Assert-Equal "1.8.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
+    Write-TestSeparator
+}
+
+function Invoke-ValidateVersionReturnsValidValue {
+    $output = & $scriptPath -Validate -SemVer "1.2.3-rc.1+Build.5"
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Version.ps1 -Validate failed with exit code $LASTEXITCODE."
+    }
+
+    Assert-Equal "1.2.3-rc.1+Build.5" $output "Validate must return the same version when valid"
+
+    Write-Host "./Version.ps1 -Validate -SemVer 1.2.3-rc.1+Build.5"
+    Write-Host "Validated Version: $output"
+    Write-TestSeparator
+}
+
+function Invoke-ValidateVersionReturnsEmptyWhenInvalid {
+    $output = & $scriptPath -Validate -SemVer "1.2.3-rc.01"
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Version.ps1 -Validate failed with exit code $LASTEXITCODE."
+    }
+
+    Assert-Equal "" $output "Validate must return empty output when invalid"
+
+    Write-Host "./Version.ps1 -Validate -SemVer 1.2.3-rc.01"
+    Write-Host "Validated Version: <empty>"
+    Write-TestSeparator
+}
+
+function Invoke-ValidateVersionDetailedKeepsCaptureClean {
+    $output = & $scriptPath -Validate -SemVer "1.2.3-rc.01" -Detailed
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Version.ps1 -Validate -Detailed failed with exit code $LASTEXITCODE."
+    }
+
+    Assert-Equal "" $output "Detailed validate must keep capturable output empty when invalid"
+
+    Write-Host "./Version.ps1 -Validate -SemVer 1.2.3-rc.01 -Detailed"
+    Write-Host "Validated Version: <empty>"
+    Write-TestSeparator
+}
+
+function Invoke-ValidateWithoutSemVerReturnsEmpty {
+    $output = & $scriptPath -Validate
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Version.ps1 -Validate failed with exit code $LASTEXITCODE."
+    }
+
+    Assert-Equal "" $output "Validate must return empty output when SemVer is missing"
+
+    Write-Host "./Version.ps1 -Validate"
+    Write-Host "Validated Version: <empty>"
+    Write-TestSeparator
+}
+
+function Invoke-TestsParameterRunsTests {
+    $previousSkip = $env:VERSION_TESTS_SKIP_TESTS_PARAMETER
+
+    try {
+        $env:VERSION_TESTS_SKIP_TESTS_PARAMETER = "1"
+        $output = & $scriptPath -Tests *>&1
+        if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+            throw "Version.ps1 -Tests failed with exit code $LASTEXITCODE."
+        }
+    }
+    finally {
+        if ($null -eq $previousSkip) {
+            Remove-Item -Path Env:VERSION_TESTS_SKIP_TESTS_PARAMETER -ErrorAction SilentlyContinue
+        } else {
+            $env:VERSION_TESTS_SKIP_TESTS_PARAMETER = $previousSkip
+        }
+    }
+
+    $joinedOutput = $output -join "`n"
+    Assert-Match $joinedOutput "All tests passed\." "Tests parameter must run Version-Tests.ps1"
+    Assert-Match $joinedOutput "TEST \d+/\d+ PASS" "Tests parameter must print PASS status"
+
+    Write-Host "./Version.ps1 -Tests"
+    Write-Host "Tests Output: OK"
     Write-TestSeparator
 }
 
@@ -806,6 +898,16 @@ function Test-BuildNameRequired {
     Invoke-VersionExpectFailure $path @{ Type = "Patch"; IsBuild = $true }
 }
 
+function Test-InvalidPrereleaseNameRejected {
+    $path = New-TestProject -Version "7.3.0"
+    Invoke-VersionExpectFailure $path @{ Type = "Patch"; IsPrerelease = $true; PrereleaseName = "rc.1+5" }
+}
+
+function Test-InvalidBuildNameRejected {
+    $path = New-TestProject -Version "7.3.0"
+    Invoke-VersionExpectFailure $path @{ Type = "Patch"; IsBuild = $true; BuildName = "Build+5" }
+}
+
 function Test-NegativeFlagsWin {
     $path = New-TestProject -Version "7.3.0" -PrereleaseName "rc" -BuildName "Build"
     Invoke-Version $path @{ Type = "Patch"; IsPrerelease = $true; IsNotPrerelease = $true; IsBuild = $true; IsNotBuild = $true }
@@ -880,6 +982,13 @@ try {
     Invoke-Usage
     Invoke-UsageExpectFailure
     Invoke-ScriptVersion
+    Invoke-ValidateVersionReturnsValidValue
+    Invoke-ValidateVersionReturnsEmptyWhenInvalid
+    Invoke-ValidateVersionDetailedKeepsCaptureClean
+    Invoke-ValidateWithoutSemVerReturnsEmpty
+    if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -ne "1") {
+        Invoke-TestsParameterRunsTests
+    }
     Invoke-ScriptVersionExpectFailure
     Invoke-ProjectVersion
     Invoke-ProjectVersionExpectFailure
@@ -904,6 +1013,8 @@ try {
     Test-ReleaseFailsBeforeSavingWhenPendingAddExists
     Test-PrereleaseNameRequired
     Test-BuildNameRequired
+    Test-InvalidPrereleaseNameRejected
+    Test-InvalidBuildNameRejected
     Test-NegativeFlagsWin
     Test-IsNotPrereleaseClearsOnlyPrerelease
     Test-IsNotBuildClearsOnlyBuild
@@ -911,6 +1022,14 @@ try {
     Test-WhatIfDoesNotSaveProject
 
     Write-Host "All tests passed."
+}
+catch {
+    if ($script:CompletedTests -lt $script:TotalTests) {
+        Write-TestStatus "FAIL" Red
+        Write-Host ("─" * 60)
+    }
+
+    throw
 }
 finally {
     if (Test-Path $testRoot) {

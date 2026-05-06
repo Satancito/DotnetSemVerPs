@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.7.1`.
+Current script version: `1.8.0`.
 
 ### Features
 
@@ -15,6 +15,8 @@ Current script version: `1.7.1`.
 - Generates `BuildNumber` as UTC epoch seconds on every version update.
 - Creates missing version properties automatically.
 - Can create local Git release commits and SemVer tags with `-Release`.
+- Can validate an external SemVer string with `-Validate -SemVer <semver>`.
+- Can run the local test script with `-Tests`.
 - Includes a test script with common versioning scenarios.
 
 ### Changelog
@@ -101,12 +103,40 @@ Read the script version:
 $scriptVersion = & ./Version.ps1 -Version
 ```
 
+Validate an external SemVer value:
+
+```powershell
+$validated = & ./Version.ps1 -Validate -SemVer 1.2.3-rc.1+Build.5
+```
+
+Print validation details while keeping the capturable output clean:
+
+```powershell
+$validated = & ./Version.ps1 -Validate -SemVer 1.2.3-rc.01 -Detailed
+```
+
+Run the local test script:
+
+```powershell
+./Version.ps1 -Tests
+```
+
 `-Usage` has its own parameter set. `-Version` can be used alone to return the
 script version, or with `-ProjectPath` to return the current `.csproj` `Version`
 value. `-BuildNumber` can be used with `-ProjectPath` to return the current
 `.csproj` `BuildNumber` value; if it is missing or empty, the script creates one
 with UTC epoch seconds and returns it. Add `-Refresh` to force a new UTC epoch
 seconds value and save it to the project.
+
+`-Validate -SemVer <semver>` returns the same version when it is valid SemVer
+2.0.0, or empty output when it is invalid. `-Detailed` writes the validation
+reason to the host so assignments like `$validated = & ./Version.ps1 ...` still
+capture only the version or an empty value. Validation uses the SemVer.org
+recommended regular expression with named groups, adapted to .NET named-group
+syntax.
+
+`-Tests` runs `Version-Tests.ps1` when it exists beside `Version.ps1`. If the
+test file does not exist, the script prints that tests were not found.
 
 Versioning syntax:
 
@@ -397,6 +427,10 @@ After NumVer: 7.3.1
 - `-ProjectPath <path.csproj> -Version` returns the current project `Version` value.
 - `-ProjectPath <path.csproj> -BuildNumber` returns the current project `BuildNumber` value and creates it if missing.
 - `-ProjectPath <path.csproj> -BuildNumber -Refresh` creates a new project `BuildNumber` value and returns it.
+- `-Validate -SemVer <semver>` validates an external SemVer string and returns only the valid version or empty output.
+- `-Tests` runs `Version-Tests.ps1` when the file exists.
+- Generated `Version` values are validated against the SemVer.org regular expression before saving.
+- `PrereleaseName` and `BuildName` must be valid SemVer identifier lists before they are used to generate `Version`.
 
 ### Running Tests
 
@@ -416,7 +450,7 @@ Expected final output:
 All tests passed.
 ```
 
-Each test prints the command executed and the before/after version state.
+Each test prints the command executed, the before/after version state, and a green `TEST <current>/<total> PASS` marker before the separator line. If a test stops early, the marker is printed as red `FAIL`.
 
 Example test output:
 
@@ -442,7 +476,8 @@ IsPrerelease: False
 PrereleaseName:
 IsBuild: False
 BuildName:
--------------------------------------
+TEST 16/42 PASS
+────────────────────────────────────────────────────────────
 ```
 
 The tests cover:
@@ -450,6 +485,8 @@ The tests cover:
 - usage output
 - invalid `-Usage` parameter set combinations
 - script version output
+- SemVer validation output
+- `-Tests` parameter execution
 - invalid `-Version` parameter set combinations
 - project version output
 - invalid project `-Version` parameter set combinations
@@ -467,5 +504,6 @@ The tests cover:
 - prerelease + build metadata generation
 - required prerelease name validation
 - required build name validation
+- invalid prerelease/build identifier validation
 - negative flag precedence
 - automatic clearing of stored prerelease/build values during version bumps

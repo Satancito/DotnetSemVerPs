@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.8.0 - 2026-05-06
+
+### Added
+
+- Added `-Validate -SemVer <semver>` to validate external SemVer strings and return only the valid version or empty output for script consumption.
+- Added `-Detailed` for validation details on a non-capturable host output stream.
+- Added `-Tests` to run `Version-Tests.ps1` when the test file exists, or print that tests were not found.
+
+### Changed
+
+- Validates generated project `Version` values against the SemVer.org recommended regex with named groups before saving.
+- Tightened `PrereleaseName` and `BuildName` validation so invalid SemVer identifier lists are rejected before generating a project version.
+- Prints each test result as `TEST <current>/<total> PASS` in green after the test separator, or `FAIL` in red when a test stops early.
+
 ## 1.7.1 - 2026-05-05
 
 ### Added
