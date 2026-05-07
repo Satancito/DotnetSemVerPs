@@ -157,8 +157,16 @@ function New-TestGitProject {
     Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("add", "--", $path) | Out-Null
     Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("commit", "-m", "Initial project") | Out-Null
 
+    $remotePath = Join-Path $testRoot ([Guid]::NewGuid().ToString("N") + ".git")
+    Invoke-TestGit -RepositoryPath $testRoot -Arguments @("init", "--bare", $remotePath) | Out-Null
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("remote", "add", "origin", $remotePath) | Out-Null
+    $branchName = @(Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "--abbrev-ref", "HEAD"))[0].ToString().Trim()
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("push", "origin", $branchName) | Out-Null
+
     return @{
         RepositoryPath = $repositoryPath
+        RemotePath = $remotePath
+        BranchName = $branchName
         ProjectPath = $path
     }
 }
@@ -357,7 +365,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.8.1" $output "Script version output must match"
+    Assert-Equal "1.9.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -748,6 +756,8 @@ function Test-ReleaseCreatesCommitAndTag {
     $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0"
     $path = $fixture.ProjectPath
     $repositoryPath = $fixture.RepositoryPath
+    $remotePath = $fixture.RemotePath
+    $branchName = $fixture.BranchName
 
     $result = Invoke-WithIsolatedGitEnvironment {
         $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
@@ -767,17 +777,22 @@ function Test-ReleaseCreatesCommitAndTag {
     $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.3.1")
     $subject = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("log", "-1", "--pretty=%s")
     $changedFiles = @(Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"))
+    $remoteTag = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("tag", "--list", "7.3.1")
+    $remoteSubject = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("log", "-1", "--pretty=%s", "refs/heads/$branchName")
 
     Assert-Equal "7.3.1" $project.Version "Release must update Version"
     Assert-Equal "7.3.1" $project.NumVer "Release must update NumVer"
     Assert-Equal "7.3.1" $tag "Release must create a matching tag"
     Assert-Equal "Release 7.3.1" $subject "Release must create a matching commit"
+    Assert-Equal "7.3.1" $remoteTag "Release must push the matching tag to origin"
+    Assert-Equal "Release 7.3.1" $remoteSubject "Release must push the release commit to origin"
     Assert-Equal 1 $changedFiles.Count "Release commit must include only one file"
     Assert-Equal "MyProject.csproj" $changedFiles[0] "Release commit must include only the project file"
     Assert-Match ($output -join "`n") "Release: True" "Release output must indicate release mode"
 
     Write-Host "./Version.ps1 -ProjectPath $path -Type Patch -Release"
     Write-Host "Release Tag: $tag"
+    Write-Host "Pushed Tag: $remoteTag"
     Write-TestSeparator
 }
 
@@ -785,6 +800,8 @@ function Test-ReleaseWorksFromProjectSubdirectory {
     $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0" -ProjectRelativeDirectory "src/MyProject"
     $path = $fixture.ProjectPath
     $repositoryPath = $fixture.RepositoryPath
+    $remotePath = $fixture.RemotePath
+    $branchName = $fixture.BranchName
 
     $result = Invoke-WithIsolatedGitEnvironment {
         $scriptOutput = & $scriptPath -ProjectPath $path -Type Minor -Release *>&1
@@ -803,15 +820,20 @@ function Test-ReleaseWorksFromProjectSubdirectory {
     $project = Read-Project $path
     $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.4.0")
     $subject = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("log", "-1", "--pretty=%s")
+    $remoteTag = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("tag", "--list", "7.4.0")
+    $remoteSubject = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("log", "-1", "--pretty=%s", "refs/heads/$branchName")
 
     Assert-Equal "7.4.0" $project.Version "Release from subdirectory must update Version"
     Assert-Equal "7.4.0" $project.NumVer "Release from subdirectory must update NumVer"
     Assert-Equal "7.4.0" $tag "Release from subdirectory must create a matching tag in the parent repository"
     Assert-Equal "Release 7.4.0" $subject "Release from subdirectory must create a matching commit in the parent repository"
+    Assert-Equal "7.4.0" $remoteTag "Release from subdirectory must push the matching tag to origin"
+    Assert-Equal "Release 7.4.0" $remoteSubject "Release from subdirectory must push the release commit to origin"
     Assert-Match ($output -join "`n") "Release: True" "Release from subdirectory output must indicate release mode"
 
     Write-Host "./Version.ps1 -ProjectPath $path -Type Minor -Release"
     Write-Host "Release Subdirectory Tag: $tag"
+    Write-Host "Pushed Subdirectory Tag: $remoteTag"
     Write-TestSeparator
 }
 

@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.9.0 - 2026-05-07
+
+### Added
+
+- `-Release` now pushes the current branch and generated SemVer tag to `origin` after creating the release commit and tag.
+
+### Tests
+
+- Added isolated local remote coverage to verify release branch and tag pushes without depending on GitHub.
+
 ## 1.8.1 - 2026-05-07
 
 ### Changed

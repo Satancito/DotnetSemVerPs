@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.8.1`.
+Current script version: `1.9.0`.
 
 ### Features
 
@@ -14,7 +14,7 @@ Current script version: `1.8.1`.
 - Supports stable versions, prerelease versions, build metadata versions, and prerelease plus build metadata versions.
 - Generates `BuildNumber` as UTC epoch seconds on every version update.
 - Creates missing version properties automatically.
-- Can create local Git release commits and SemVer tags with `-Release`.
+- Can create and push Git release commits and SemVer tags with `-Release`.
 - Can validate an external SemVer string with `-Validate -SemVer <semver>`.
 - Can run the local test script with `-Tests`.
 - Includes a test script with common versioning scenarios.
@@ -160,8 +160,8 @@ starts: no untracked files, no unstaged changes, and no staged changes waiting t
 be committed. It calculates the next version and checks that the matching Git tag
 does not already exist before saving the project file. If the release is valid,
 the script updates the `.csproj`, stages only that project file, commits only
-that project file with `Release <version>`, and creates a local tag named exactly
-as the generated SemVer value. It does not push.
+that project file with `Release <version>`, creates a tag named exactly as the
+generated SemVer value, then pushes the current branch and that tag to `origin`.
 
 Preview without saving:
 
@@ -419,7 +419,7 @@ After NumVer: 7.3.1
 - `-Release` requires the `.csproj` folder or one of its parent folders to be a valid Git repository.
 - `-Release` requires a completely clean Git working tree before it starts.
 - `-Release` fails when untracked, unstaged, or staged changes already exist.
-- `-Release` stages and commits only the project version change, then creates a local tag after validating that the tag does not exist.
+- `-Release` stages and commits only the project version change, creates a tag after validating that it does not exist, then pushes the current branch and tag to `origin`.
 - `-IsNotPrerelease` overrides `-IsPrerelease`.
 - `-IsNotBuild` overrides `-IsBuild`.
 - `-WhatIf` previews current and next generated values without saving the project file.
@@ -497,6 +497,7 @@ The tests cover:
 - invalid project `-BuildNumber` parameter set combinations
 - `-WhatIf` preview without saving
 - release commit and tag creation
+- release push of the current branch and tag to `origin`
 - release from a project nested under a repository
 - release failure before saving when a tag already exists
 - release failure before saving when untracked files exist

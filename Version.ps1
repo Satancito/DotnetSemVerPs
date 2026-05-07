@@ -58,7 +58,7 @@ param(
     [string]$SemVer
 )
 
-$ScriptVersion = "1.8.1"
+$ScriptVersion = "1.9.0"
 $DefaultInitialVersionCore = "0.1.0"
 $SemVerPattern = '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
 
@@ -101,7 +101,7 @@ Options:
   -BuildName <name>          Build name. If omitted, uses the csproj value.
   -IsNotBuild                Disables build. Takes precedence over -IsBuild.
   -Stable                    Clears prerelease/build after the increment.
-  -Release                   Requires a clean Git working tree, commits only the updated project file, and creates a Git tag for the generated Version.
+  -Release                   Requires a clean Git working tree, commits only the updated project file, creates a Git tag, and pushes both.
   -WhatIf                    Shows the generated result without saving the project file.
   -Usage                     Shows this help. Must be used alone.
   -Version                   Shows the script version when used alone, or the project Version with -ProjectPath.
@@ -125,7 +125,7 @@ Rules:
   Stable as Type does not increment the version; it only promotes to stable.
   Release requires a valid Git repository and a completely clean Git working tree before it starts.
   Release fails before saving if untracked, unstaged, or staged changes already exist.
-  Release stages and commits only the project version change, then creates the SemVer tag.
+  Release stages and commits only the project version change, creates the SemVer tag, then pushes the branch and tag to origin.
   WhatIf calculates and prints the result without writing changes to the project file.
   If IsPrerelease ends as true, PrereleaseName is required.
   If IsBuild ends as true, BuildName is required.
@@ -384,10 +384,17 @@ function Complete-GitRelease {
     )
 
     $resolvedProjectPath = (Resolve-Path $ProjectPath).Path
+    $branchResult = Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("rev-parse", "--abbrev-ref", "HEAD")
+    $branchName = @($branchResult.Output)[0].ToString().Trim()
+    if ([string]::IsNullOrWhiteSpace($branchName) -or $branchName -eq "HEAD") {
+        throw "Release requires the repository to be on a named Git branch before it can push."
+    }
 
     Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("add", "--", $resolvedProjectPath) | Out-Null
     Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("commit", "-m", "Release $Version", "--", $resolvedProjectPath) | Out-Null
     Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("tag", $Version) | Out-Null
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("push", "origin", $branchName) | Out-Null
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("push", "origin", $Version) | Out-Null
 }
 
 function Test-Parameters {
