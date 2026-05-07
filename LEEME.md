@@ -4,7 +4,7 @@ Herramientas PowerShell para administrar versiones SemVer en archivos de proyect
 
 `DotnetSemVerPs` actualiza propiedades de version en archivos `.csproj`, soporta flujos estables, prerelease y metadata de build, genera build numbers como epoch UTC, e incluye un script de pruebas para validar escenarios de versionado.
 
-Version actual del script: `1.8.0`.
+Version actual del script: `1.8.1`.
 
 ### Funcionalidades
 
@@ -156,13 +156,13 @@ Crear un commit local de release y tag:
 `-Release` primero localiza el repositorio Git que contiene el `.csproj` buscando
 hacia arriba desde la carpeta del archivo de proyecto. El proyecto puede estar
 anidado cualquier cantidad de carpetas dentro del repositorio; solo necesita
-estar dentro de un repo Git valido. Luego el script verifica que no existan
-archivos untracked o unstaged pendientes de `git add`, calcula la siguiente
-version y revisa que no exista el tag Git correspondiente. Si cualquiera de esas
-validaciones falla, el script se detiene antes de guardar el proyecto, evitando
-commits innecesarios. Si el release es valido, el script actualiza el `.csproj`,
-hace commit de ese archivo de proyecto con `Release <version>`, y crea un tag
-local con el nombre exacto del valor SemVer generado. No hace push.
+estar dentro de un repo Git valido. Luego el script requiere un working tree de
+Git completamente limpio antes de iniciar: sin archivos untracked, sin cambios
+unstaged, y sin cambios staged esperando commit. Calcula la siguiente version y
+revisa que no exista el tag Git correspondiente antes de guardar el proyecto. Si
+el release es valido, el script actualiza el `.csproj`, agrega al stage solo ese
+archivo de proyecto, hace commit solo de ese archivo con `Release <version>`, y
+crea un tag local con el nombre exacto del valor SemVer generado. No hace push.
 
 Previsualizar sin guardar:
 
@@ -419,8 +419,9 @@ After NumVer: 7.3.1
 - `Stable` como `Type` no incrementa `NumVer`.
 - `-Stable` como switch limpia prerelease/build despues de incrementar.
 - `-Release` requiere que la carpeta del `.csproj`, o alguna carpeta padre, sea un repositorio Git valido.
-- `-Release` requiere que no existan archivos untracked o unstaged pendientes de `git add` antes de ejecutarse.
-- `-Release` crea un commit local y un tag despues de validar que el tag no exista.
+- `-Release` requiere un working tree de Git completamente limpio antes de iniciar.
+- `-Release` falla cuando existen archivos untracked, cambios unstaged, o cambios staged.
+- `-Release` agrega al stage y commitea solo el cambio de version del proyecto, luego crea un tag local despues de validar que el tag no exista.
 - `-IsNotPrerelease` sobreescribe `-IsPrerelease`.
 - `-IsNotBuild` sobreescribe `-IsBuild`.
 - `-WhatIf` previsualiza los valores actuales y siguientes generados sin guardar el archivo de proyecto.
@@ -487,7 +488,7 @@ IsPrerelease: False
 PrereleaseName:
 IsBuild: False
 BuildName:
-TEST 16/42 PASS
+TEST 16/44 PASS
 ────────────────────────────────────────────────────────────
 ```
 
@@ -506,6 +507,13 @@ Las pruebas cubren:
 - salida de build number refrescado del proyecto
 - combinaciones invalidas de `-BuildNumber` del proyecto
 - preview con `-WhatIf` sin guardar
+- creacion de commit y tag de release
+- release desde un proyecto anidado dentro de un repositorio
+- fallo de release antes de guardar cuando el tag ya existe
+- fallo de release antes de guardar cuando existen archivos untracked
+- fallo de release antes de guardar cuando existen cambios unstaged
+- fallo de release antes de guardar cuando existen cambios staged
+- alcance del commit de release limitado al archivo de proyecto actualizado
 - promocion a stable
 - promocion a stable desde prerelease
 - promocion a stable desde metadata de build

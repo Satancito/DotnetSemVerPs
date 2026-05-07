@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.8.0`.
+Current script version: `1.8.1`.
 
 ### Features
 
@@ -155,13 +155,13 @@ Create a local release commit and tag:
 `-Release` first locates the Git repository that contains the `.csproj` by
 searching upward from the project file's folder. The project can be nested any
 number of folders inside the repository; it only needs to be inside a valid Git
-repo. The script then verifies that there are no untracked or unstaged files
-pending `git add`, calculates the next version, and checks that the matching Git
-tag does not already exist. If either check fails, the script stops before saving
-the project file, avoiding unnecessary commits. If the release is valid, the
-script updates the `.csproj`, commits that project file with `Release <version>`,
-and creates a local tag named exactly as the generated SemVer value. It does not
-push.
+repo. The script then requires a completely clean Git working tree before it
+starts: no untracked files, no unstaged changes, and no staged changes waiting to
+be committed. It calculates the next version and checks that the matching Git tag
+does not already exist before saving the project file. If the release is valid,
+the script updates the `.csproj`, stages only that project file, commits only
+that project file with `Release <version>`, and creates a local tag named exactly
+as the generated SemVer value. It does not push.
 
 Preview without saving:
 
@@ -417,8 +417,9 @@ After NumVer: 7.3.1
 - `Stable` as `Type` does not increment `NumVer`.
 - `-Stable` as a switch clears prerelease/build after incrementing.
 - `-Release` requires the `.csproj` folder or one of its parent folders to be a valid Git repository.
-- `-Release` requires no untracked or unstaged files pending `git add` before it runs.
-- `-Release` creates a local commit and tag after validating that the tag does not exist.
+- `-Release` requires a completely clean Git working tree before it starts.
+- `-Release` fails when untracked, unstaged, or staged changes already exist.
+- `-Release` stages and commits only the project version change, then creates a local tag after validating that the tag does not exist.
 - `-IsNotPrerelease` overrides `-IsPrerelease`.
 - `-IsNotBuild` overrides `-IsBuild`.
 - `-WhatIf` previews current and next generated values without saving the project file.
@@ -476,7 +477,7 @@ IsPrerelease: False
 PrereleaseName:
 IsBuild: False
 BuildName:
-TEST 16/42 PASS
+TEST 16/44 PASS
 ────────────────────────────────────────────────────────────
 ```
 
@@ -495,6 +496,13 @@ The tests cover:
 - refreshed project build number output
 - invalid project `-BuildNumber` parameter set combinations
 - `-WhatIf` preview without saving
+- release commit and tag creation
+- release from a project nested under a repository
+- release failure before saving when a tag already exists
+- release failure before saving when untracked files exist
+- release failure before saving when unstaged changes exist
+- release failure before saving when staged changes exist
+- release commit scope limited to the updated project file
 - stable promotion
 - stable promotion from prerelease
 - stable promotion from build metadata

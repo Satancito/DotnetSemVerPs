@@ -5,7 +5,7 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("VersionTests-" + [Guid
 $testGitHome = Join-Path $testRoot "GitHome"
 $testGitConfig = Join-Path $testGitHome ".gitconfig"
 $script:CompletedTests = 0
-$script:TotalTests = if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -eq "1") { 41 } else { 42 }
+$script:TotalTests = if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -eq "1") { 43 } else { 44 }
 
 function Invoke-WithIsolatedGitEnvironment {
     param([scriptblock]$ScriptBlock)
@@ -357,7 +357,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.8.0" $output "Script version output must match"
+    Assert-Equal "1.8.1" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -766,11 +766,14 @@ function Test-ReleaseCreatesCommitAndTag {
     $project = Read-Project $path
     $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.3.1")
     $subject = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("log", "-1", "--pretty=%s")
+    $changedFiles = @(Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"))
 
     Assert-Equal "7.3.1" $project.Version "Release must update Version"
     Assert-Equal "7.3.1" $project.NumVer "Release must update NumVer"
     Assert-Equal "7.3.1" $tag "Release must create a matching tag"
     Assert-Equal "Release 7.3.1" $subject "Release must create a matching commit"
+    Assert-Equal 1 $changedFiles.Count "Release commit must include only one file"
+    Assert-Equal "MyProject.csproj" $changedFiles[0] "Release commit must include only the project file"
     Assert-Match ($output -join "`n") "Release: True" "Release output must indicate release mode"
 
     Write-Host "./Version.ps1 -ProjectPath $path -Type Patch -Release"
@@ -848,7 +851,7 @@ function Test-ReleaseFailsBeforeSavingWhenTagExists {
     Write-TestSeparator
 }
 
-function Test-ReleaseFailsBeforeSavingWhenPendingAddExists {
+function Test-ReleaseFailsBeforeSavingWhenUntrackedFilesExist {
     $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0"
     $path = $fixture.ProjectPath
     $repositoryPath = $fixture.RepositoryPath
@@ -868,7 +871,7 @@ function Test-ReleaseFailsBeforeSavingWhenPendingAddExists {
     }
 
     if ($null -eq $errorMessage) {
-        throw "Expected failure because release has pending git add items."
+        throw "Expected failure because release has untracked files."
     }
 
     $project = Read-Project $path
@@ -876,11 +879,98 @@ function Test-ReleaseFailsBeforeSavingWhenPendingAddExists {
     $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.3.1")
     $tagText = ($tag -join "")
 
-    Assert-Equal "7.3.0" $project.Version "Release must not save project when pending git add items exist"
-    Assert-Equal "7.3.0" $project.NumVer "Release must not save NumVer when pending git add items exist"
-    Assert-Equal $headBefore $headAfter "Release must not create a commit when pending git add items exist"
-    Assert-Equal "" $tagText "Release must not create a tag when pending git add items exist"
-    Assert-Match $errorMessage "Release requires all repository changes to be staged" "Release must explain pending git add failure"
+    Assert-Equal "7.3.0" $project.Version "Release must not save project when untracked files exist"
+    Assert-Equal "7.3.0" $project.NumVer "Release must not save NumVer when untracked files exist"
+    Assert-Equal $headBefore $headAfter "Release must not create a commit when untracked files exist"
+    Assert-Equal "" $tagText "Release must not create a tag when untracked files exist"
+    Assert-Match $errorMessage "Release requires a completely clean Git working tree" "Release must explain clean tree requirement"
+    Assert-Match $errorMessage "Untracked files: \?\? notes\.txt" "Release must explain untracked files"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Type Patch -Release"
+    Write-Host "Expected Failure: True"
+    Write-Host "Error: $errorMessage"
+    Write-TestSeparator
+}
+
+function Test-ReleaseFailsBeforeSavingWhenUnstagedChangesExist {
+    $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0"
+    $path = $fixture.ProjectPath
+    $repositoryPath = $fixture.RepositoryPath
+    $trackedPath = Join-Path $repositoryPath "notes.txt"
+    Set-Content -Path $trackedPath -Value "Committed release note." -Encoding UTF8
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("add", "--", $trackedPath) | Out-Null
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("commit", "-m", "Add release notes") | Out-Null
+    Set-Content -Path $trackedPath -Value "Unstaged release note." -Encoding UTF8
+
+    $headBefore = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD")
+    $errorMessage = $null
+
+    try {
+        Invoke-WithIsolatedGitEnvironment {
+            & $scriptPath -ProjectPath $path -Type Patch -Release *> $null
+        }
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+    }
+
+    if ($null -eq $errorMessage) {
+        throw "Expected failure because release has unstaged changes."
+    }
+
+    $project = Read-Project $path
+    $headAfter = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD")
+    $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.3.1")
+    $tagText = ($tag -join "")
+
+    Assert-Equal "7.3.0" $project.Version "Release must not save project when unstaged changes exist"
+    Assert-Equal "7.3.0" $project.NumVer "Release must not save NumVer when unstaged changes exist"
+    Assert-Equal $headBefore $headAfter "Release must not create a commit when unstaged changes exist"
+    Assert-Equal "" $tagText "Release must not create a tag when unstaged changes exist"
+    Assert-Match $errorMessage "Release requires a completely clean Git working tree" "Release must explain clean tree requirement"
+    Assert-Match $errorMessage "Unstaged changes:  M notes\.txt" "Release must explain unstaged changes"
+
+    Write-Host "./Version.ps1 -ProjectPath $path -Type Patch -Release"
+    Write-Host "Expected Failure: True"
+    Write-Host "Error: $errorMessage"
+    Write-TestSeparator
+}
+
+function Test-ReleaseFailsBeforeSavingWhenStagedChangesExist {
+    $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0"
+    $path = $fixture.ProjectPath
+    $repositoryPath = $fixture.RepositoryPath
+    $stagedPath = Join-Path $repositoryPath "notes.txt"
+    Set-Content -Path $stagedPath -Value "Staged release note." -Encoding UTF8
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("add", "--", $stagedPath) | Out-Null
+
+    $headBefore = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD")
+    $errorMessage = $null
+
+    try {
+        Invoke-WithIsolatedGitEnvironment {
+            & $scriptPath -ProjectPath $path -Type Patch -Release *> $null
+        }
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+    }
+
+    if ($null -eq $errorMessage) {
+        throw "Expected failure because release has staged changes."
+    }
+
+    $project = Read-Project $path
+    $headAfter = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD")
+    $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.3.1")
+    $tagText = ($tag -join "")
+
+    Assert-Equal "7.3.0" $project.Version "Release must not save project when staged changes exist"
+    Assert-Equal "7.3.0" $project.NumVer "Release must not save NumVer when staged changes exist"
+    Assert-Equal $headBefore $headAfter "Release must not create a commit when staged changes exist"
+    Assert-Equal "" $tagText "Release must not create a tag when staged changes exist"
+    Assert-Match $errorMessage "Release requires a completely clean Git working tree" "Release must explain clean tree requirement"
+    Assert-Match $errorMessage "Staged changes: A  notes\.txt" "Release must explain staged changes"
 
     Write-Host "./Version.ps1 -ProjectPath $path -Type Patch -Release"
     Write-Host "Expected Failure: True"
@@ -1010,7 +1100,9 @@ try {
     Test-ReleaseCreatesCommitAndTag
     Test-ReleaseWorksFromProjectSubdirectory
     Test-ReleaseFailsBeforeSavingWhenTagExists
-    Test-ReleaseFailsBeforeSavingWhenPendingAddExists
+    Test-ReleaseFailsBeforeSavingWhenUntrackedFilesExist
+    Test-ReleaseFailsBeforeSavingWhenUnstagedChangesExist
+    Test-ReleaseFailsBeforeSavingWhenStagedChangesExist
     Test-PrereleaseNameRequired
     Test-BuildNameRequired
     Test-InvalidPrereleaseNameRejected

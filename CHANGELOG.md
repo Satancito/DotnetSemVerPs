@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.8.1 - 2026-05-07
+
+### Changed
+
+- `-Release` now requires a completely clean Git working tree before modifying the project file.
+- `-Release` now fails before saving when untracked, unstaged, or staged changes already exist.
+- Documented that `-Release` stages and commits only the updated project file before creating the SemVer tag.
+
+### Tests
+
+- Added release safety coverage for untracked files, unstaged changes, staged changes, clean release success, and release commit scope.
+
 ## 1.8.0 - 2026-05-06
 
 ### Added

@@ -58,7 +58,7 @@ param(
     [string]$SemVer
 )
 
-$ScriptVersion = "1.8.0"
+$ScriptVersion = "1.8.1"
 $DefaultInitialVersionCore = "0.1.0"
 $SemVerPattern = '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
 
@@ -101,7 +101,7 @@ Options:
   -BuildName <name>          Build name. If omitted, uses the csproj value.
   -IsNotBuild                Disables build. Takes precedence over -IsBuild.
   -Stable                    Clears prerelease/build after the increment.
-  -Release                   Commits the updated project and creates a Git tag for the generated Version.
+  -Release                   Requires a clean Git working tree, commits only the updated project file, and creates a Git tag for the generated Version.
   -WhatIf                    Shows the generated result without saving the project file.
   -Usage                     Shows this help. Must be used alone.
   -Version                   Shows the script version when used alone, or the project Version with -ProjectPath.
@@ -123,8 +123,9 @@ Rules:
   Missing Version and NumVer values start from 0.1.0.
   Major, Minor, and Patch clear stored prerelease/build values unless explicitly enabled.
   Stable as Type does not increment the version; it only promotes to stable.
-  Release requires a valid Git repository and fails before saving if the generated tag already exists.
-  Release requires all existing repository changes to be staged before it runs.
+  Release requires a valid Git repository and a completely clean Git working tree before it starts.
+  Release fails before saving if untracked, unstaged, or staged changes already exist.
+  Release stages and commits only the project version change, then creates the SemVer tag.
   WhatIf calculates and prints the result without writing changes to the project file.
   If IsPrerelease ends as true, PrereleaseName is required.
   If IsBuild ends as true, BuildName is required.
@@ -329,21 +330,49 @@ function Assert-GitTagAvailable {
     }
 }
 
-function Assert-GitHasNoPendingAdd {
+function Assert-GitWorkingTreeClean {
     param([string]$RepositoryPath)
 
     $result = Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("status", "--porcelain")
-    $pendingAddItems = @()
+    $untrackedItems = @()
+    $unstagedItems = @()
+    $stagedItems = @()
 
     foreach ($line in @($result.Output)) {
         $text = $line.ToString()
-        if ($text.StartsWith("??") -or ($text.Length -ge 2 -and $text[1] -ne " ")) {
-            $pendingAddItems += $text
+        if ([string]::IsNullOrWhiteSpace($text) -or $text.Length -lt 2) {
+            continue
+        }
+
+        if ($text.StartsWith("??")) {
+            $untrackedItems += $text
+            continue
+        }
+
+        if ($text[0] -ne " ") {
+            $stagedItems += $text
+        }
+
+        if ($text[1] -ne " ") {
+            $unstagedItems += $text
         }
     }
 
-    if ($pendingAddItems.Count -gt 0) {
-        throw "Release requires all repository changes to be staged before it runs. Pending git add items: $($pendingAddItems -join '; ')"
+    if ($untrackedItems.Count -gt 0 -or $unstagedItems.Count -gt 0 -or $stagedItems.Count -gt 0) {
+        $details = @()
+        if ($untrackedItems.Count -gt 0) {
+            $details += "Untracked files: $($untrackedItems -join '; ')"
+        }
+
+        if ($unstagedItems.Count -gt 0) {
+            $details += "Unstaged changes: $($unstagedItems -join '; ')"
+        }
+
+        if ($stagedItems.Count -gt 0) {
+            $details += "Staged changes: $($stagedItems -join '; ')"
+        }
+
+        throw "Release requires a completely clean Git working tree before it starts. $($details -join ' ')"
     }
 }
 
@@ -733,7 +762,7 @@ try {
     if ($Release -and -not $WhatIfPreference) {
         $releaseBuildNumber = New-BuildNumber
         $repositoryRoot = Get-GitRepositoryRoot -Path $ProjectPath
-        Assert-GitHasNoPendingAdd -RepositoryPath $repositoryRoot
+        Assert-GitWorkingTreeClean -RepositoryPath $repositoryRoot
         $preview = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber
         Assert-GitTagAvailable -RepositoryPath $repositoryRoot -TagName $preview.Next.Version
 
