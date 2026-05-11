@@ -58,7 +58,7 @@ param(
     [string]$SemVer
 )
 
-$ScriptVersion = "1.9.0"
+$ScriptVersion = "1.12.0"
 $DefaultInitialVersionCore = "0.1.0"
 $SemVerPattern = '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
 
@@ -88,23 +88,23 @@ csproj properties:
   IsBuild          true/false.
 
 Types:
-  Major   Increments major and resets minor/patch. Clears prerelease/build by default.
-  Minor   Increments minor and resets patch. Clears prerelease/build by default.
-  Patch   Increments patch. Clears prerelease/build by default.
+  Major   Increments major and resets minor/patch. Reuses stored prerelease/build names when present.
+  Minor   Increments minor and resets patch. Reuses stored prerelease/build names when present.
+  Patch   Increments patch. Reuses stored prerelease/build names when present.
   Stable  Does not increment NumVer. Promotes Version to stable and clears prerelease/build.
 
 Options:
   -IsPrerelease              Enables prerelease for this run.
-  -PrereleaseName <name>     Prerelease name. If omitted, uses the csproj value.
+  -PrereleaseName <name>     Prerelease name. Required with -IsPrerelease.
   -IsNotPrerelease           Disables prerelease. Takes precedence over -IsPrerelease.
   -IsBuild                   Enables build metadata for this run.
-  -BuildName <name>          Build name. If omitted, uses the csproj value.
+  -BuildName <name>          Build name. Required with -IsBuild.
   -IsNotBuild                Disables build. Takes precedence over -IsBuild.
   -Stable                    Clears prerelease/build after the increment.
-  -Release                   Requires a clean Git working tree, commits only the updated project file, creates a Git tag, and pushes both.
+  -Release                   Requires a clean Git working tree, calculates release version from Conventional Commits when the latest tag is SemVer, commits only the updated project file, creates or moves a Git tag, and pushes both.
   -WhatIf                    Shows the generated result without saving the project file.
   -Usage                     Shows this help. Must be used alone.
-  -Version                   Shows the script version when used alone, or the project Version with -ProjectPath.
+  -Version                   Shows the script version when used alone, or the project Version with -ProjectPath. Creates 0.1.0 when missing.
   -BuildNumber               Shows or creates the project BuildNumber with -ProjectPath.
   -Refresh                   Recomputes BuildNumber when used with -BuildNumber.
   -Validate                  Validates a SemVer string passed with -SemVer.
@@ -121,14 +121,22 @@ Rules:
   Version stores the final SemVer value.
   NumVer stores only Major.Minor.Patch.
   Missing Version and NumVer values start from 0.1.0.
-  Major, Minor, and Patch clear stored prerelease/build values unless explicitly enabled.
-  Stable as Type does not increment the version; it only promotes to stable.
+  Major, Minor, and Patch reuse stored PrereleaseName and BuildName values when present.
+  Stable as Type does not increment the version; it only promotes to stable and clears prerelease/build values.
+  IsPrerelease requires a non-empty PrereleaseName parameter.
+  IsBuild requires a non-empty BuildName parameter.
+  IsNotPrerelease clears PrereleaseName from the project.
+  IsNotBuild clears BuildName from the project.
   Release requires a valid Git repository and a completely clean Git working tree before it starts.
   Release fails before saving if untracked, unstaged, or staged changes already exist.
-  Release stages and commits only the project version change, creates the SemVer tag, then pushes the branch and tag to origin.
+  Release uses commits since the latest SemVer tag to calculate the next version. breaking changes increment major, feat increments minor, and fix/perf increment patch.
+  If no commit increments the version, Release moves the existing SemVer tag to the new release commit.
+  If the latest tag is not SemVer, Release starts from the project version and scans commits after that tag.
+  If no tag exists, Release starts from the project version and scans all commits.
+  Release stages and commits only the project version change with tag: <version>, creates or moves the SemVer tag, then pushes the branch and tag to origin.
   WhatIf calculates and prints the result without writing changes to the project file.
-  If IsPrerelease ends as true, PrereleaseName is required.
-  If IsBuild ends as true, BuildName is required.
+  If -IsPrerelease is used, -PrereleaseName is required.
+  If -IsBuild is used, -BuildName is required.
   IsNotPrerelease and IsNotBuild take precedence over their positive flags.
 
 Examples:
@@ -227,12 +235,20 @@ function Get-ProjectVersion {
     [xml]$project = Get-Content $Path
     $propertyGroup = @($project.Project.PropertyGroup)[0]
     if ($null -eq $propertyGroup) {
-        throw "PropertyGroup not found in project file: $Path"
+        $propertyGroup = $project.CreateElement("PropertyGroup")
+        $project.Project.AppendChild($propertyGroup) | Out-Null
     }
 
-    $versionProperty = $propertyGroup.SelectSingleNode("Version")
-    if ($null -eq $versionProperty -or [string]::IsNullOrWhiteSpace($versionProperty.InnerText)) {
-        throw "Version property not found in project file: $Path"
+    $versionProperty = Get-OrCreate-Property $project $propertyGroup "Version"
+    if ([string]::IsNullOrWhiteSpace($versionProperty.InnerText)) {
+        $versionProperty.InnerText = $DefaultInitialVersionCore
+
+        $numVerProperty = Get-OrCreate-Property $project $propertyGroup "NumVer"
+        if ([string]::IsNullOrWhiteSpace($numVerProperty.InnerText)) {
+            $numVerProperty.InnerText = $DefaultInitialVersionCore
+        }
+
+        $project.Save((Resolve-Path $Path))
     }
 
     Write-Output $versionProperty.InnerText
@@ -330,6 +346,137 @@ function Assert-GitTagAvailable {
     }
 }
 
+function Get-LatestGitTag {
+    param([string]$RepositoryPath)
+
+    $result = Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("describe", "--tags", "--abbrev=0") -IgnoreFailure $true
+    $outputLines = @($result.Output)
+    if ($result.ExitCode -ne 0 -or $outputLines.Count -eq 0) {
+        return ""
+    }
+
+    return $outputLines[0].ToString().Trim()
+}
+
+function Get-GitCommitMessagesSinceTag {
+    param(
+        [string]$RepositoryPath,
+        [string]$TagName
+    )
+
+    $range = if ([string]::IsNullOrWhiteSpace($TagName)) { "HEAD" } else { "$TagName..HEAD" }
+    $result = Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("log", "--reverse", "--format=%H", $range)
+    $messages = @()
+
+    foreach ($hash in @($result.Output)) {
+        $commitHash = $hash.ToString().Trim()
+        if ([string]::IsNullOrWhiteSpace($commitHash)) {
+            continue
+        }
+
+        $messageResult = Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("log", "-1", "--format=%B", $commitHash)
+        $message = (@($messageResult.Output) -join "`n").Trim()
+        if (-not [string]::IsNullOrWhiteSpace($message)) {
+            $messages += $message
+        }
+    }
+
+    return $messages
+}
+
+function Get-ConventionalCommitBumpType {
+    param([string]$Message)
+
+    if ([string]::IsNullOrWhiteSpace($Message)) {
+        return ""
+    }
+
+    $header = (($Message -split "`r?`n") | Select-Object -First 1).Trim()
+    $isBreaking = $header -match '^[A-Za-z]+(?:\([^)]+\))?!:' -or $Message -match '(?m)^BREAKING[ -]CHANGE:'
+    if ($isBreaking) {
+        return "Major"
+    }
+
+    if ($header -match '^feat(?:\([^)]+\))?:') {
+        return "Minor"
+    }
+
+    if ($header -match '^(fix|perf)(?:\([^)]+\))?:') {
+        return "Patch"
+    }
+
+    return ""
+}
+
+function Get-ProjectVersionCore {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "File not found: $Path"
+    }
+
+    [xml]$project = Get-Content $Path
+    $propertyGroup = @($project.Project.PropertyGroup)[0]
+    if ($null -eq $propertyGroup) {
+        return Get-InitialSemVerCore
+    }
+
+    $numVer = $propertyGroup.SelectSingleNode("NumVer")?.InnerText
+    if (-not [string]::IsNullOrWhiteSpace($numVer)) {
+        return ConvertTo-SemVerCore $numVer
+    }
+
+    $version = $propertyGroup.SelectSingleNode("Version")?.InnerText
+    if (-not [string]::IsNullOrWhiteSpace($version)) {
+        return ConvertTo-SemVerCore $version
+    }
+
+    return Get-InitialSemVerCore
+}
+
+function Get-ReleaseVersionPlan {
+    param(
+        [string]$RepositoryPath,
+        [string]$ProjectPath
+    )
+
+    $latestTag = Get-LatestGitTag -RepositoryPath $RepositoryPath
+    if ([string]::IsNullOrWhiteSpace($latestTag) -or -not (Test-SemVer $latestTag)) {
+        $versionCore = Get-ProjectVersionCore -Path $ProjectPath
+        $messages = Get-GitCommitMessagesSinceTag -RepositoryPath $RepositoryPath -TagName $latestTag
+        foreach ($message in $messages) {
+            $bumpType = Get-ConventionalCommitBumpType -Message $message
+            if (-not [string]::IsNullOrWhiteSpace($bumpType)) {
+                $versionCore = Update-SemVerCore $versionCore $bumpType
+            }
+        }
+
+        return @{
+            HasSemVerTag = $false
+            LatestTag = $latestTag
+            VersionCore = $versionCore
+            ShouldMoveExistingTag = $false
+        }
+    }
+
+    $versionCore = ConvertTo-SemVerCore $latestTag
+    $messages = Get-GitCommitMessagesSinceTag -RepositoryPath $RepositoryPath -TagName $latestTag
+
+    foreach ($message in $messages) {
+        $bumpType = Get-ConventionalCommitBumpType -Message $message
+        if (-not [string]::IsNullOrWhiteSpace($bumpType)) {
+            $versionCore = Update-SemVerCore $versionCore $bumpType
+        }
+    }
+
+    return @{
+        HasSemVerTag = $true
+        LatestTag = $latestTag
+        VersionCore = $versionCore
+        ShouldMoveExistingTag = ($versionCore -eq (ConvertTo-SemVerCore $latestTag))
+    }
+}
+
 function Assert-GitWorkingTreeClean {
     param([string]$RepositoryPath)
 
@@ -380,7 +527,8 @@ function Complete-GitRelease {
     param(
         [string]$RepositoryPath,
         [string]$ProjectPath,
-        [string]$Version
+        [string]$Version,
+        [bool]$MoveExistingTag = $false
     )
 
     $resolvedProjectPath = (Resolve-Path $ProjectPath).Path
@@ -391,10 +539,12 @@ function Complete-GitRelease {
     }
 
     Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("add", "--", $resolvedProjectPath) | Out-Null
-    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("commit", "-m", "Release $Version", "--", $resolvedProjectPath) | Out-Null
-    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("tag", $Version) | Out-Null
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("commit", "-m", "tag: $Version", "--", $resolvedProjectPath) | Out-Null
+    $tagArguments = if ($MoveExistingTag) { @("tag", "-f", $Version) } else { @("tag", $Version) }
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments $tagArguments | Out-Null
     Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("push", "origin", $branchName) | Out-Null
-    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("push", "origin", $Version) | Out-Null
+    $pushTagArguments = if ($MoveExistingTag) { @("push", "--force", "origin", $Version) } else { @("push", "origin", $Version) }
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments $pushTagArguments | Out-Null
 }
 
 function Test-Parameters {
@@ -408,6 +558,14 @@ function Test-Parameters {
 
     if ([string]::IsNullOrWhiteSpace($Type)) {
         throw "Type is required. Use -Usage to show help."
+    }
+
+    if ($IsPrerelease -and [string]::IsNullOrWhiteSpace($PrereleaseName)) {
+        throw "PrereleaseName is required when IsPrerelease is used."
+    }
+
+    if ($IsBuild -and [string]::IsNullOrWhiteSpace($BuildName)) {
+        throw "BuildName is required when IsBuild is used."
     }
 
     if ($Type -notin @("Major", "Minor", "Patch", "Stable")) {
@@ -560,7 +718,8 @@ function Update-ProjectVersion {
         [string]$Path,
         [string]$BumpType,
         [bool]$PreviewOnly = $false,
-        [string]$BuildNumberOverride = ""
+        [string]$BuildNumberOverride = "",
+        [string]$VersionCoreOverride = ""
     )
 
     if (-not (Test-Path $Path)) {
@@ -601,14 +760,17 @@ function Update-ProjectVersion {
         $currentNumVer = Get-InitialSemVerCore
     }
 
-    $newCore = Update-SemVerCore $currentNumVer $BumpType
+    $newCore = if ([string]::IsNullOrWhiteSpace($VersionCoreOverride)) {
+        Update-SemVerCore $currentNumVer $BumpType
+    } else {
+        ConvertTo-SemVerCore $VersionCoreOverride
+    }
     $buildNumber = if ([string]::IsNullOrWhiteSpace($BuildNumberOverride)) { New-BuildNumber } else { $BuildNumberOverride }
 
-    $isVersionBump = $BumpType -in @("Major", "Minor", "Patch")
-    $effectiveIsPrerelease = if ($isVersionBump) { $false } else { Get-BoolProperty $propertyGroup "IsPrerelease" }
-    $effectiveIsBuild = if ($isVersionBump) { $false } else { Get-BoolProperty $propertyGroup "IsBuild" }
-    $effectivePrereleaseName = if ($isVersionBump) { "" } else { Get-EffectiveName $PrereleaseName $prereleaseNameProperty.InnerText }
-    $effectiveBuildName = if ($isVersionBump) { "" } else { Get-EffectiveName $BuildName $buildNameProperty.InnerText }
+    $effectivePrereleaseName = $prereleaseNameProperty.InnerText
+    $effectiveBuildName = $buildNameProperty.InnerText
+    $effectiveIsPrerelease = -not [string]::IsNullOrWhiteSpace($effectivePrereleaseName)
+    $effectiveIsBuild = -not [string]::IsNullOrWhiteSpace($effectiveBuildName)
 
     if ($Stable -or $BumpType -eq "Stable") {
         $effectiveIsPrerelease = $false
@@ -618,12 +780,12 @@ function Update-ProjectVersion {
     } else {
         if ($IsPrerelease) {
             $effectiveIsPrerelease = $true
-            $effectivePrereleaseName = Get-EffectiveName $PrereleaseName $prereleaseNameProperty.InnerText
+            $effectivePrereleaseName = $PrereleaseName
         }
 
         if ($IsBuild) {
             $effectiveIsBuild = $true
-            $effectiveBuildName = Get-EffectiveName $BuildName $buildNameProperty.InnerText
+            $effectiveBuildName = $BuildName
         }
 
         if ($IsNotPrerelease) {
@@ -770,11 +932,15 @@ try {
         $releaseBuildNumber = New-BuildNumber
         $repositoryRoot = Get-GitRepositoryRoot -Path $ProjectPath
         Assert-GitWorkingTreeClean -RepositoryPath $repositoryRoot
-        $preview = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber
-        Assert-GitTagAvailable -RepositoryPath $repositoryRoot -TagName $preview.Next.Version
+        $releasePlan = Get-ReleaseVersionPlan -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath
+        $versionCoreOverride = $releasePlan.VersionCore
+        $preview = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
+        if (-not $releasePlan.ShouldMoveExistingTag) {
+            Assert-GitTagAvailable -RepositoryPath $repositoryRoot -TagName $preview.Next.Version
+        }
 
-        $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $false -BuildNumberOverride $releaseBuildNumber
-        Complete-GitRelease -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -Version $result.Next.Version
+        $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $false -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
+        Complete-GitRelease -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -Version $result.Next.Version -MoveExistingTag $releasePlan.ShouldMoveExistingTag
     } else {
         $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $WhatIfPreference
     }

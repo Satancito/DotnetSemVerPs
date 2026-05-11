@@ -2,6 +2,47 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.12.0 - 2026-05-11
+
+### Added
+
+- `-Release` now calculates the release version from chronological Conventional Commits since the latest SemVer tag.
+- `-Release` now moves the existing SemVer tag to the new release commit when no conventional commit increments the version.
+- `-Release` now starts from the project version and scans commits after the latest tag when that tag is not SemVer.
+- `-Release` now starts from the project version and scans all commits when no tag exists.
+- `-Release` now ignores commit messages that are not Conventional Commits while calculating the release version.
+- Release commits now use the Conventional Commit message `tag: <version>`.
+
+### Documentation
+
+- Added Conventional Commit release tables showing which commit types increment major, minor, or patch, which types do not increment, and which messages are ignored.
+
+### Tests
+
+- Added release coverage for Conventional Commit version calculation, non-conventional commit ignores, existing tag movement, non-SemVer latest tags, and repositories without tags.
+
+## 1.11.0 - 2026-05-11
+
+### Added
+
+- `-ProjectPath <path.csproj> -Version` now creates missing project `Version` and `NumVer` values as `0.1.0`, saves the project, and returns `0.1.0`.
+
+### Tests
+
+- Added coverage for project version reads that initialize missing version properties.
+
+## 1.10.0 - 2026-05-11
+
+### Changed
+
+- `Major`, `Minor`, and `Patch` now reuse stored `PrereleaseName` and `BuildName` values when present instead of clearing them by default.
+- `-IsNotPrerelease` and `-IsNotBuild` now explicitly clear the matching stored project values.
+- `-IsPrerelease` now requires a non-empty `-PrereleaseName`, and `-IsBuild` now requires a non-empty `-BuildName`.
+
+### Tests
+
+- Added coverage for stored prerelease/build reuse, negative flag clearing, and required prerelease/build names when positive flags are used.
+
 ## 1.9.0 - 2026-05-07
 
 ### Added

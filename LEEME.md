@@ -4,7 +4,7 @@ Herramientas PowerShell para administrar versiones SemVer en archivos de proyect
 
 `DotnetSemVerPs` actualiza propiedades de version en archivos `.csproj`, soporta flujos estables, prerelease y metadata de build, genera build numbers como epoch UTC, e incluye un script de pruebas para validar escenarios de versionado.
 
-Version actual del script: `1.9.0`.
+Version actual del script: `1.12.0`.
 
 ### Funcionalidades
 
@@ -79,7 +79,7 @@ Mostrar la version del script:
 ./Version.ps1 -Version
 ```
 
-Leer la version actual del proyecto:
+Leer o crear la version actual del proyecto:
 
 ```powershell
 $projectVersion = & ./Version.ps1 -ProjectPath ./MyProject.csproj -Version
@@ -123,7 +123,9 @@ Ejecutar el script local de pruebas:
 
 `-Usage` tiene su propio parameter set. `-Version` puede usarse solo para retornar
 la version del script, o con `-ProjectPath` para retornar el valor `Version` del
-`.csproj`. `-BuildNumber` puede usarse con `-ProjectPath` para retornar el valor
+`.csproj`. Si `Version` falta o esta vacio en el proyecto, el script crea
+`Version` y `NumVer` con `0.1.0`, guarda el proyecto y retorna `0.1.0`.
+`-BuildNumber` puede usarse con `-ProjectPath` para retornar el valor
 actual `BuildNumber` del `.csproj`; si falta o esta vacio, el script crea uno
 con epoch UTC y lo retorna. Agrega `-Refresh` para forzar un nuevo valor epoch UTC
 y guardarlo en el proyecto.
@@ -158,12 +160,48 @@ hacia arriba desde la carpeta del archivo de proyecto. El proyecto puede estar
 anidado cualquier cantidad de carpetas dentro del repositorio; solo necesita
 estar dentro de un repo Git valido. Luego el script requiere un working tree de
 Git completamente limpio antes de iniciar: sin archivos untracked, sin cambios
-unstaged, y sin cambios staged esperando commit. Calcula la siguiente version y
-revisa que no exista el tag Git correspondiente antes de guardar el proyecto. Si
-el release es valido, el script actualiza el `.csproj`, agrega al stage solo ese
-archivo de proyecto, hace commit solo de ese archivo con `Release <version>`,
-crea un tag con el nombre exacto del valor SemVer generado, y luego sube el
-branch actual y ese tag a `origin`.
+unstaged, y sin cambios staged esperando commit.
+
+Cuando el ultimo tag Git alcanzable es SemVer valido, `-Release` calcula la
+siguiente version desde los commits posteriores a ese tag en orden cronologico
+usando Conventional Commits: breaking changes incrementa major, `feat`
+incrementa minor, y `fix` o `perf` incrementa patch. Los mensajes que no son
+Conventional Commits se ignoran en el calculo; tipos Conventional Commit que no
+corresponden a un incremento, como `docs` o `test`, no cambian la version. Si
+ningun commit incrementa la version, la version generada queda igual al ultimo
+tag SemVer y el script mueve ese tag existente al nuevo commit de release. Si el
+ultimo tag alcanzable no es SemVer valido, el script
+trata el repositorio como si no tuviera tags SemVer, inicia desde la version
+actual del proyecto y analiza los commits posteriores a ese tag. Si no existe
+ningun tag, el script inicia desde la version actual del proyecto y analiza todos
+los commits.
+
+Si el release es valido, el script actualiza el `.csproj`, agrega al stage solo
+ese archivo de proyecto, hace commit solo de ese archivo con `tag: <version>`,
+crea o mueve un tag con el nombre exacto del valor SemVer generado, y luego sube
+el branch actual y ese tag a `origin`.
+
+### Conventional Commits En Release
+
+Solo los mensajes Conventional Commit se consideran durante el calculo de version
+de `-Release`.
+
+| Mensaje de commit | Cambio de version | Ejemplo desde `0.1.0` |
+|---|---|---|
+| `feat: ...` | Minor | `0.2.0` |
+| `fix: ...` | Patch | `0.1.1` |
+| `perf: ...` | Patch | `0.1.1` |
+| `feat!: ...` o `feat(scope)!: ...` | Major | `1.0.0` |
+| Cuerpo del mensaje con `BREAKING CHANGE:` | Major | `1.0.0` |
+| `docs: ...` | Sin cambio | `0.1.0` |
+| `test: ...` | Sin cambio | `0.1.0` |
+| `chore: ...`, `refactor: ...`, `style: ...`, `build: ...`, `ci: ...` | Sin cambio | `0.1.0` |
+| `tag: <version>` | Sin cambio | `0.1.0` |
+| Cualquier mensaje que no sea Conventional Commit | Ignorado | `0.1.0` |
+
+El calculo es acumulativo y cronologico. Por ejemplo, iniciando en `0.1.0`:
+`feat` -> `0.2.0`, `fix` -> `0.2.1`, `perf` -> `0.2.2`, `docs` ->
+`0.2.2`, breaking change -> `1.0.0`, luego `feat` -> `1.1.0`.
 
 Previsualizar sin guardar:
 
@@ -195,7 +233,7 @@ WhatIf: True
 
 #### Patch
 
-Incrementa patch y limpia valores prerelease/build guardados por defecto.
+Incrementa patch y reutiliza valores prerelease/build guardados cuando existen.
 
 ```powershell
 ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch
@@ -213,7 +251,7 @@ After NumVer: 7.3.1
 
 #### Minor
 
-Incrementa minor, reinicia patch y limpia valores prerelease/build guardados por defecto.
+Incrementa minor, reinicia patch y reutiliza valores prerelease/build guardados cuando existen.
 
 ```powershell
 ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Minor
@@ -227,7 +265,7 @@ Ejemplo:
 
 #### Major
 
-Incrementa major, reinicia minor/patch y limpia valores prerelease/build guardados por defecto.
+Incrementa major, reinicia minor/patch y reutiliza valores prerelease/build guardados cuando existen.
 
 ```powershell
 ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Major
@@ -275,7 +313,7 @@ PrereleaseName: rc
 BuildName:
 ```
 
-Si `IsPrerelease` termina como `True`, `PrereleaseName` es requerido.
+Cuando se usa `-IsPrerelease`, `-PrereleaseName` es requerido y no puede estar vacio ni contener solo espacios. Los nombres prerelease guardados se reutilizan en futuras ejecuciones `Major`, `Minor` y `Patch` hasta que `-IsNotPrerelease` o un flujo stable los limpie.
 
 Ejemplo invalido:
 
@@ -286,7 +324,7 @@ Ejemplo invalido:
 Error esperado:
 
 ```text
-PrereleaseName cannot be empty.
+PrereleaseName is required when IsPrerelease is used.
 ```
 
 ### Metadata De Build
@@ -309,7 +347,7 @@ PrereleaseName:
 BuildName: Build
 ```
 
-Si `IsBuild` termina como `True`, `BuildName` es requerido.
+Cuando se usa `-IsBuild`, `-BuildName` es requerido y no puede estar vacio ni contener solo espacios. Los nombres build guardados se reutilizan en futuras ejecuciones `Major`, `Minor` y `Patch` hasta que `-IsNotBuild` o un flujo stable los limpie.
 
 Ejemplo invalido:
 
@@ -320,7 +358,7 @@ Ejemplo invalido:
 Error esperado:
 
 ```text
-BuildName cannot be empty.
+BuildName is required when IsBuild is used.
 ```
 
 ### Prerelease Y Metadata De Build
@@ -349,7 +387,7 @@ BuildName: Build
 
 ### Flags Negativos
 
-Los flags negativos sobreescriben los flags positivos.
+Los flags negativos sobreescriben los flags positivos y limpian el valor guardado correspondiente en el proyecto.
 
 #### Deshabilitar Prerelease
 
@@ -416,19 +454,25 @@ After NumVer: 7.3.1
 - `NumVer` guarda solamente `Major.Minor.Patch`.
 - Valores faltantes de `Version` y `NumVer` inician desde `0.1.0`.
 - `BuildNumber` se recalcula en cada actualizacion de version.
-- `Major`, `Minor` y `Patch` limpian valores prerelease/build guardados por defecto.
+- `Major`, `Minor` y `Patch` reutilizan valores `PrereleaseName` y `BuildName` guardados cuando existen.
 - `Stable` como `Type` no incrementa `NumVer`.
 - `-Stable` como switch limpia prerelease/build despues de incrementar.
 - `-Release` requiere que la carpeta del `.csproj`, o alguna carpeta padre, sea un repositorio Git valido.
 - `-Release` requiere un working tree de Git completamente limpio antes de iniciar.
 - `-Release` falla cuando existen archivos untracked, cambios unstaged, o cambios staged.
-- `-Release` agrega al stage y commitea solo el cambio de version del proyecto, crea un tag despues de validar que no exista, y luego sube el branch actual y el tag a `origin`.
-- `-IsNotPrerelease` sobreescribe `-IsPrerelease`.
-- `-IsNotBuild` sobreescribe `-IsBuild`.
+- `-Release` calcula la version de release desde Conventional Commits cronologicos desde el ultimo tag SemVer cuando existe.
+- `-Release` inicia desde la version del proyecto y analiza commits despues del ultimo tag cuando ese tag no es SemVer.
+- `-Release` inicia desde la version del proyecto y analiza todos los commits cuando no existe ningun tag.
+- `-Release` mueve el ultimo tag SemVer al commit de release cuando ningun commit incrementa la version.
+- `-Release` agrega al stage y commitea solo el cambio de version del proyecto con `tag: <version>`, crea o mueve el tag SemVer, y luego sube el branch actual y el tag a `origin`.
+- `-IsPrerelease` requiere un `-PrereleaseName` no vacio.
+- `-IsBuild` requiere un `-BuildName` no vacio.
+- `-IsNotPrerelease` sobreescribe `-IsPrerelease` y limpia `PrereleaseName` guardado.
+- `-IsNotBuild` sobreescribe `-IsBuild` y limpia `BuildName` guardado.
 - `-WhatIf` previsualiza los valores actuales y siguientes generados sin guardar el archivo de proyecto.
 - `-Usage` pertenece a un parameter set exclusivo y no puede combinarse con parametros de versionado.
 - `-Version` retorna la version del script cuando se usa solo.
-- `-ProjectPath <path.csproj> -Version` retorna el valor `Version` actual del proyecto.
+- `-ProjectPath <path.csproj> -Version` retorna el valor `Version` actual del proyecto y crea `Version`/`NumVer` como `0.1.0` cuando falta.
 - `-ProjectPath <path.csproj> -BuildNumber` retorna el valor `BuildNumber` actual del proyecto y lo crea si falta.
 - `-ProjectPath <path.csproj> -BuildNumber -Refresh` crea un nuevo valor `BuildNumber` del proyecto y lo retorna.
 - `-Validate -SemVer <semver>` valida un string SemVer externo y retorna solo la version valida o salida vacia.
@@ -468,7 +512,7 @@ una prueba se detiene antes de finalizar, el marcador se imprime en rojo como
 Ejemplo de salida de pruebas:
 
 ```text
-./Version.ps1 -ProjectPath C:\...\test.csproj -Type Stable
+./Version.ps1 -ProjectPath /path/to/MyProject.csproj -Type Stable
 Type: Stable
 Params: Type=Stable
 ┌────────────────────────────┐
@@ -489,7 +533,7 @@ IsPrerelease: False
 PrereleaseName:
 IsBuild: False
 BuildName:
-TEST 16/44 PASS
+TEST 16/53 PASS
 ────────────────────────────────────────────────────────────
 ```
 
@@ -502,6 +546,7 @@ Las pruebas cubren:
 - ejecucion del parametro `-Tests`
 - combinaciones invalidas del parameter set `-Version`
 - salida de version del proyecto
+- salida de version generada del proyecto
 - combinaciones invalidas de `-Version` del proyecto
 - salida de build number del proyecto
 - salida de build number generado del proyecto
@@ -509,9 +554,13 @@ Las pruebas cubren:
 - combinaciones invalidas de `-BuildNumber` del proyecto
 - preview con `-WhatIf` sin guardar
 - creacion de commit y tag de release
+- calculo de version de release desde Conventional Commits cronologicos
+- release ignorando mensajes que no son Conventional Commits
+- movimiento del tag de release cuando ningun Conventional Commit incrementa la version
+- calculo de release desde la version del proyecto cuando el ultimo tag no es SemVer
+- calculo de release desde la version del proyecto cuando no existe ningun tag
 - push del branch actual y tag de release a `origin`
 - release desde un proyecto anidado dentro de un repositorio
-- fallo de release antes de guardar cuando el tag ya existe
 - fallo de release antes de guardar cuando existen archivos untracked
 - fallo de release antes de guardar cuando existen cambios unstaged
 - fallo de release antes de guardar cuando existen cambios staged
@@ -520,6 +569,7 @@ Las pruebas cubren:
 - promocion a stable desde prerelease
 - promocion a stable desde metadata de build
 - incrementos patch/minor/major
+- reutilizacion de valores prerelease/build guardados durante incrementos patch/minor/major
 - generacion de prerelease
 - generacion de metadata de build
 - generacion de prerelease + metadata de build
@@ -527,4 +577,4 @@ Las pruebas cubren:
 - validacion de nombre build requerido
 - validacion de identificadores prerelease/build invalidos
 - precedencia de flags negativos
-- limpieza automatica de valores prerelease/build guardados durante incrementos de version
+- limpieza de valores prerelease/build guardados con flags negativos
