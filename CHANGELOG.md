@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.12.1 - 2026-05-11
+
+### Fixed
+
+- Reset test `$LASTEXITCODE` before invoking `Version.ps1` so earlier native command exit codes cannot make successful script calls fail.
+- Moved the detailed invalid SemVer test command label before its output so TEST 6 owns its own detailed message.
+
 ## 1.12.0 - 2026-05-11
 
 ### Added

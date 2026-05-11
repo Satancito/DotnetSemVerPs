@@ -8,6 +8,10 @@ $displayProjectPath = "/path/to/MyProject.csproj"
 $script:CompletedTests = 0
 $script:TotalTests = if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -eq "1") { 52 } else { 53 }
 
+function Reset-LastExitCode {
+    $global:LASTEXITCODE = 0
+}
+
 function Invoke-WithIsolatedGitEnvironment {
     param([scriptblock]$ScriptBlock)
 
@@ -285,6 +289,7 @@ function Invoke-Version {
     $commandText = Get-CommandText $ProjectPath $Parameters
 
     $Parameters["ProjectPath"] = $ProjectPath
+    Reset-LastExitCode
     & $scriptPath @Parameters *> $null
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 failed with exit code $LASTEXITCODE."
@@ -321,6 +326,7 @@ function Invoke-VersionExpectFailure {
     $errorMessage = $null
 
     try {
+        Reset-LastExitCode
         & $scriptPath @Parameters *> $null
     }
     catch {
@@ -348,6 +354,7 @@ function Invoke-VersionExpectFailure {
 }
 
 function Invoke-Usage {
+    Reset-LastExitCode
     & $scriptPath -Usage *> $null
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -Usage failed with exit code $LASTEXITCODE."
@@ -362,6 +369,7 @@ function Invoke-UsageExpectFailure {
     $errorMessage = $null
 
     try {
+        Reset-LastExitCode
         & $scriptPath -Usage -Type Patch *> $null
     }
     catch {
@@ -379,12 +387,13 @@ function Invoke-UsageExpectFailure {
 }
 
 function Invoke-ScriptVersion {
+    Reset-LastExitCode
     $output = & $scriptPath -Version
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.12.0" $output "Script version output must match"
+    Assert-Equal "1.12.1" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -392,6 +401,7 @@ function Invoke-ScriptVersion {
 }
 
 function Invoke-ValidateVersionReturnsValidValue {
+    Reset-LastExitCode
     $output = & $scriptPath -Validate -SemVer "1.2.3-rc.1+Build.5"
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -Validate failed with exit code $LASTEXITCODE."
@@ -405,6 +415,7 @@ function Invoke-ValidateVersionReturnsValidValue {
 }
 
 function Invoke-ValidateVersionReturnsEmptyWhenInvalid {
+    Reset-LastExitCode
     $output = & $scriptPath -Validate -SemVer "1.2.3-rc.01"
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -Validate failed with exit code $LASTEXITCODE."
@@ -418,6 +429,8 @@ function Invoke-ValidateVersionReturnsEmptyWhenInvalid {
 }
 
 function Invoke-ValidateVersionDetailedKeepsCaptureClean {
+    Write-Host "./Version.ps1 -Validate -SemVer 1.2.3-rc.01 -Detailed"
+    Reset-LastExitCode
     $output = & $scriptPath -Validate -SemVer "1.2.3-rc.01" -Detailed
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -Validate -Detailed failed with exit code $LASTEXITCODE."
@@ -425,12 +438,12 @@ function Invoke-ValidateVersionDetailedKeepsCaptureClean {
 
     Assert-Equal "" $output "Detailed validate must keep capturable output empty when invalid"
 
-    Write-Host "./Version.ps1 -Validate -SemVer 1.2.3-rc.01 -Detailed"
     Write-Host "Validated Version: <empty>"
     Write-TestSeparator
 }
 
 function Invoke-ValidateWithoutSemVerReturnsEmpty {
+    Reset-LastExitCode
     $output = & $scriptPath -Validate
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -Validate failed with exit code $LASTEXITCODE."
@@ -448,6 +461,7 @@ function Invoke-TestsParameterRunsTests {
 
     try {
         $env:VERSION_TESTS_SKIP_TESTS_PARAMETER = "1"
+        Reset-LastExitCode
         $output = & $scriptPath -Tests *>&1
         if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
             throw "Version.ps1 -Tests failed with exit code $LASTEXITCODE."
@@ -474,6 +488,7 @@ function Invoke-ScriptVersionExpectFailure {
     $errorMessage = $null
 
     try {
+        Reset-LastExitCode
         & $scriptPath -Version -Type Patch *> $null
     }
     catch {
@@ -492,6 +507,7 @@ function Invoke-ScriptVersionExpectFailure {
 
 function Invoke-ProjectVersion {
     $path = New-TestProject -Version "7.3.0-rc2+Build.123"
+    Reset-LastExitCode
     $output = & $scriptPath -ProjectPath $path -Version
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -ProjectPath <path> -Version failed with exit code $LASTEXITCODE."
@@ -506,6 +522,7 @@ function Invoke-ProjectVersion {
 
 function Invoke-ProjectVersionCreatesMissing {
     $path = New-TestProjectWithoutVersionProperties
+    Reset-LastExitCode
     $output = & $scriptPath -ProjectPath $path -Version
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -ProjectPath <path> -Version failed with exit code $LASTEXITCODE."
@@ -527,6 +544,7 @@ function Invoke-ProjectVersionExpectFailure {
     $path = New-TestProject
 
     try {
+        Reset-LastExitCode
         & $scriptPath -ProjectPath $path -Version -Type Patch *> $null
     }
     catch {
@@ -545,6 +563,7 @@ function Invoke-ProjectVersionExpectFailure {
 
 function Invoke-ProjectBuildNumberReturnsExisting {
     $path = New-TestProject -BuildNumber "1234567890"
+    Reset-LastExitCode
     $output = & $scriptPath -ProjectPath $path -BuildNumber
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -ProjectPath <path> -BuildNumber failed with exit code $LASTEXITCODE."
@@ -562,6 +581,7 @@ function Invoke-ProjectBuildNumberReturnsExisting {
 
 function Invoke-ProjectBuildNumberGeneratesMissing {
     $path = New-TestProject
+    Reset-LastExitCode
     $output = & $scriptPath -ProjectPath $path -BuildNumber
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -ProjectPath <path> -BuildNumber failed with exit code $LASTEXITCODE."
@@ -579,6 +599,7 @@ function Invoke-ProjectBuildNumberGeneratesMissing {
 
 function Invoke-ProjectBuildNumberRefreshesExisting {
     $path = New-TestProject -BuildNumber "1"
+    Reset-LastExitCode
     $output = & $scriptPath -ProjectPath $path -BuildNumber -Refresh
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -ProjectPath <path> -BuildNumber -Refresh failed with exit code $LASTEXITCODE."
@@ -602,6 +623,7 @@ function Invoke-ProjectBuildNumberExpectFailure {
     $path = New-TestProject
 
     try {
+        Reset-LastExitCode
         & $scriptPath -ProjectPath $path -BuildNumber -Type Patch *> $null
     }
     catch {
@@ -818,6 +840,7 @@ function Test-ReleaseCreatesCommitAndTag {
     Add-TestGitCommit -RepositoryPath $repositoryPath -Message "fix: prepare patch release"
 
     $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
         $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
@@ -863,6 +886,7 @@ function Test-ReleaseWorksFromProjectSubdirectory {
     Add-TestGitCommit -RepositoryPath $repositoryPath -Message "feat: prepare minor release"
 
     $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
         $scriptOutput = & $scriptPath -ProjectPath $path -Type Minor -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
@@ -922,6 +946,7 @@ function Test-ReleaseUsesConventionalCommitsSinceLatestSemVerTag {
     Add-TestReleaseScenarioCommits -RepositoryPath $repositoryPath
 
     $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
         $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
@@ -965,6 +990,7 @@ function Test-ReleaseIgnoresNonConventionalCommits {
     Add-TestGitCommit -RepositoryPath $repositoryPath -Message "random notes"
 
     $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
         $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
@@ -1000,6 +1026,7 @@ function Test-ReleaseMovesExistingTagWhenNoConventionalBumpExists {
     Add-TestGitCommit -RepositoryPath $repositoryPath -Message "docs: update examples"
 
     $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
         $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
@@ -1037,6 +1064,7 @@ function Test-ReleaseUsesProjectVersionAndCommitsAfterNonSemVerLatestTag {
     Add-TestReleaseScenarioCommits -RepositoryPath $repositoryPath
 
     $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
         $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
@@ -1068,6 +1096,7 @@ function Test-ReleaseUsesProjectVersionAndAllCommitsWhenNoTagsExist {
     Add-TestReleaseScenarioCommits -RepositoryPath $repositoryPath
 
     $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
         $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
@@ -1103,6 +1132,7 @@ function Test-ReleaseFailsBeforeSavingWhenUntrackedFilesExist {
 
     try {
         Invoke-WithIsolatedGitEnvironment {
+            Reset-LastExitCode
             & $scriptPath -ProjectPath $path -Type Patch -Release *> $null
         }
     }
@@ -1147,6 +1177,7 @@ function Test-ReleaseFailsBeforeSavingWhenUnstagedChangesExist {
 
     try {
         Invoke-WithIsolatedGitEnvironment {
+            Reset-LastExitCode
             & $scriptPath -ProjectPath $path -Type Patch -Release *> $null
         }
     }
@@ -1189,6 +1220,7 @@ function Test-ReleaseFailsBeforeSavingWhenStagedChangesExist {
 
     try {
         Invoke-WithIsolatedGitEnvironment {
+            Reset-LastExitCode
             & $scriptPath -ProjectPath $path -Type Patch -Release *> $null
         }
     }
@@ -1295,6 +1327,7 @@ function Test-MajorResets {
 
 function Test-WhatIfDoesNotSaveProject {
     $path = New-TestProject -Version "7.3.0"
+    Reset-LastExitCode
     $output = & $scriptPath -ProjectPath $path -Type Patch -WhatIf *>&1
     if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         throw "Version.ps1 -WhatIf failed with exit code $LASTEXITCODE."
