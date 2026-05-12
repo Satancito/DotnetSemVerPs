@@ -4,7 +4,7 @@ Herramientas PowerShell para administrar versiones SemVer en archivos de proyect
 
 `DotnetSemVerPs` actualiza propiedades de version en archivos `.csproj`, soporta flujos estables, prerelease y metadata de build, genera build numbers como epoch UTC, e incluye un script de pruebas para validar escenarios de versionado.
 
-Version actual del script: `1.12.1`.
+Version actual del script: `1.15.0`.
 
 ### Funcionalidades
 
@@ -144,7 +144,7 @@ encontrados.
 Sintaxis de versionado:
 
 ```powershell
-./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch|Stable> [options]
+./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch> [options]
 ```
 
 `-ProjectPath` y `-Type` son requeridos para el parameter set de versionado.
@@ -152,10 +152,11 @@ Sintaxis de versionado:
 Crear un commit local de release y tag:
 
 ```powershell
-./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -Release
+./Version.ps1 -ProjectPath ./MyProject.csproj -Release
 ```
 
-`-Release` primero localiza el repositorio Git que contiene el `.csproj` buscando
+`-Release` tiene su propio parameter set y debe usarse sin `-Type`; la version
+de release se calcula desde Conventional Commits. Primero localiza el repositorio Git que contiene el `.csproj` buscando
 hacia arriba desde la carpeta del archivo de proyecto. El proyecto puede estar
 anidado cualquier cantidad de carpetas dentro del repositorio; solo necesita
 estar dentro de un repo Git valido. Luego el script requiere un working tree de
@@ -282,7 +283,7 @@ Ejemplo:
 Promueve la version numerica actual a estable sin incrementar `NumVer`.
 
 ```powershell
-./Version.ps1 -ProjectPath ./MyProject.csproj -Type Stable
+./Version.ps1 -ProjectPath ./MyProject.csproj -Stable
 ```
 
 Ejemplo:
@@ -431,8 +432,8 @@ IsBuild: False
 
 ### Switch Stable
 
-`-Stable` puede combinarse con `Major`, `Minor` o `Patch` para incrementar la
-version numerica pero forzar que el resultado sea estable.
+`-Stable` tambien puede combinarse con `Major`, `Minor` o `Patch` para
+incrementar la version numerica y forzar que la version generada sea estable.
 
 ```powershell
 ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -Stable
@@ -455,9 +456,11 @@ After NumVer: 7.3.1
 - Valores faltantes de `Version` y `NumVer` inician desde `0.1.0`.
 - `BuildNumber` se recalcula en cada actualizacion de version.
 - `Major`, `Minor` y `Patch` reutilizan valores `PrereleaseName` y `BuildName` guardados cuando existen.
-- `Stable` como `Type` no incrementa `NumVer`.
-- `-Stable` como switch limpia prerelease/build despues de incrementar.
+- `Type` acepta solamente `Major`, `Minor` o `Patch`.
+- `-Stable` solo promueve sin incrementar `NumVer`.
+- `-Type <Major|Minor|Patch> -Stable` incrementa y luego limpia prerelease/build.
 - `-Release` requiere que la carpeta del `.csproj`, o alguna carpeta padre, sea un repositorio Git valido.
+- `-Release` debe usarse sin `-Type`; las versiones de release se calculan desde Conventional Commits.
 - `-Release` requiere un working tree de Git completamente limpio antes de iniciar.
 - `-Release` falla cuando existen archivos untracked, cambios unstaged, o cambios staged.
 - `-Release` calcula la version de release desde Conventional Commits cronologicos desde el ultimo tag SemVer cuando existe.
@@ -512,9 +515,9 @@ una prueba se detiene antes de finalizar, el marcador se imprime en rojo como
 Ejemplo de salida de pruebas:
 
 ```text
-./Version.ps1 -ProjectPath /path/to/MyProject.csproj -Type Stable
-Type: Stable
-Params: Type=Stable
+./Version.ps1 -ProjectPath /path/to/MyProject.csproj -Stable
+Type: <empty>
+Params: Stable=True
 ┌────────────────────────────┐
 │           Before           │
 └────────────────────────────┘

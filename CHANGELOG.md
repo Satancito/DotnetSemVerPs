@@ -2,6 +2,53 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.15.0 - 2026-05-12
+
+### Changed
+
+- Removed `Stable` from the public `-Type` values; `-Type` now accepts only `Major`, `Minor`, or `Patch`.
+- Restored `-Type <Major|Minor|Patch> -Stable` to increment the version and generate a stable SemVer without prerelease/build metadata.
+- Kept standalone `-Stable` as the way to promote the current version to stable without incrementing `NumVer`.
+
+### Documentation
+
+- Updated usage, README, and LEEME to describe the new `-Stable` and `-Type ... -Stable` behavior.
+
+### Tests
+
+- Updated stable tests to cover standalone promotion, stable promotion after a bump, and rejection of `-Type Stable`.
+
+## 1.14.0 - 2026-05-12
+
+### Added
+
+- Added a standalone `-ProjectPath <path.csproj> -Stable` parameter set equivalent to `-Type Stable`.
+- `-Type <type> -Stable` combinations are now rejected because `-Stable` is an isolated stable promotion command.
+
+### Documentation
+
+- Documented standalone `-Stable` usage in README, LEEME, and usage output.
+
+### Tests
+
+- Added coverage for standalone `-Stable` promotion without incrementing `NumVer` and rejection of `-Type Patch -Stable`.
+
+## 1.13.0 - 2026-05-12
+
+### Changed
+
+- `-Release` now has its own parameter set and no longer requires `-Type`.
+- `-Release -Type <type>` is now rejected because release versions are calculated from Conventional Commits.
+- `-Stable -Type Stable` is now rejected; use `-Type Stable` by itself when no version increment is needed.
+
+### Documentation
+
+- Updated usage, README, and LEEME release examples to use `-ProjectPath <path.csproj> -Release`.
+
+### Tests
+
+- Updated release tests to run without `-Type` and added coverage that rejects `-Release -Type Patch` and `-Stable -Type Stable`.
+
 ## 1.12.1 - 2026-05-11
 
 ### Fixed

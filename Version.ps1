@@ -1,11 +1,13 @@
 [CmdletBinding(DefaultParameterSetName = "Update", SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $true, ParameterSetName = "Update")]
+    [Parameter(Mandatory = $true, ParameterSetName = "Release")]
+    [Parameter(Mandatory = $true, ParameterSetName = "Stable")]
     [Parameter(Mandatory = $true, ParameterSetName = "ProjectVersion")]
     [Parameter(Mandatory = $true, ParameterSetName = "ProjectBuildNumber")]
     [string]$ProjectPath,
 
-    [Parameter(Mandatory = $true, ParameterSetName = "Update")]
+    [Parameter(ParameterSetName = "Update")]
     [string]$Type,
 
     [Parameter(ParameterSetName = "Update")]
@@ -27,9 +29,10 @@ param(
     [switch]$IsNotBuild,
 
     [Parameter(ParameterSetName = "Update")]
+    [Parameter(Mandatory = $true, ParameterSetName = "Stable")]
     [switch]$Stable,
 
-    [Parameter(ParameterSetName = "Update")]
+    [Parameter(Mandatory = $true, ParameterSetName = "Release")]
     [switch]$Release,
 
     [Parameter(Mandatory = $true, ParameterSetName = "Usage")]
@@ -58,7 +61,7 @@ param(
     [string]$SemVer
 )
 
-$ScriptVersion = "1.12.1"
+$ScriptVersion = "1.15.0"
 $DefaultInitialVersionCore = "0.1.0"
 $SemVerPattern = '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
 
@@ -70,7 +73,9 @@ Generates complete SemVer versions for .NET projects.
 Script version: $ScriptVersion
 
 Usage:
-  ./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch|Stable> [options]
+  ./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch> [options]
+  ./Version.ps1 -ProjectPath <path.csproj> -Stable
+  ./Version.ps1 -ProjectPath <path.csproj> -Release
   ./Version.ps1 -ProjectPath <path.csproj> -Version
   ./Version.ps1 -ProjectPath <path.csproj> -BuildNumber
   ./Version.ps1 -Validate -SemVer <semver> [-Detailed]
@@ -91,7 +96,6 @@ Types:
   Major   Increments major and resets minor/patch. Reuses stored prerelease/build names when present.
   Minor   Increments minor and resets patch. Reuses stored prerelease/build names when present.
   Patch   Increments patch. Reuses stored prerelease/build names when present.
-  Stable  Does not increment NumVer. Promotes Version to stable and clears prerelease/build.
 
 Options:
   -IsPrerelease              Enables prerelease for this run.
@@ -100,8 +104,8 @@ Options:
   -IsBuild                   Enables build metadata for this run.
   -BuildName <name>          Build name. Required with -IsBuild.
   -IsNotBuild                Disables build. Takes precedence over -IsBuild.
-  -Stable                    Clears prerelease/build after the increment.
-  -Release                   Requires a clean Git working tree, calculates release version from Conventional Commits when the latest tag is SemVer, commits only the updated project file, creates or moves a Git tag, and pushes both.
+  -Stable                    Promotes to stable when used alone, or clears prerelease/build after Major, Minor, or Patch.
+  -Release                   Requires a clean Git working tree, calculates release version from Conventional Commits, commits only the updated project file, creates or moves a Git tag, and pushes both. Must be used without -Type.
   -WhatIf                    Shows the generated result without saving the project file.
   -Usage                     Shows this help. Must be used alone.
   -Version                   Shows the script version when used alone, or the project Version with -ProjectPath. Creates 0.1.0 when missing.
@@ -118,11 +122,14 @@ Rules:
   -BuildNumber must be used with only ProjectPath, optionally with Refresh.
   -Validate must be used with -SemVer <semver>. It outputs the same version when valid, or empty output when invalid.
   -Tests must be used alone.
+  -Stable can be used with only ProjectPath to promote without incrementing NumVer, or with Type Major, Minor, or Patch to promote after incrementing.
+  -Release must be used with only ProjectPath. It calculates the version from Conventional Commits; do not pass -Type.
   Version stores the final SemVer value.
   NumVer stores only Major.Minor.Patch.
   Missing Version and NumVer values start from 0.1.0.
   Major, Minor, and Patch reuse stored PrereleaseName and BuildName values when present.
-  Stable as Type does not increment the version; it only promotes to stable and clears prerelease/build values.
+  Type must be Major, Minor, or Patch.
+  Use -Stable by itself when no version increment is needed.
   IsPrerelease requires a non-empty PrereleaseName parameter.
   IsBuild requires a non-empty BuildName parameter.
   IsNotPrerelease clears PrereleaseName from the project.
@@ -144,8 +151,8 @@ Examples:
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Minor -IsPrerelease -PrereleaseName rc
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -IsBuild -BuildName Build
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -IsPrerelease -PrereleaseName rc2.1 -IsBuild -BuildName Build
-  ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Stable
-  ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -Release
+  ./Version.ps1 -ProjectPath ./MyProject.csproj -Stable
+  ./Version.ps1 -ProjectPath ./MyProject.csproj -Release
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -WhatIf
   `$validated = & ./Version.ps1 -Validate -SemVer 1.2.3-rc.1+Build.5
   `$validated = & ./Version.ps1 -Validate -SemVer 1.2.3-rc.1+Build.5 -Detailed
@@ -556,6 +563,14 @@ function Test-Parameters {
         throw "ProjectPath is required. Use -Usage to show help."
     }
 
+    if ($Release) {
+        return
+    }
+
+    if ($Stable -and [string]::IsNullOrWhiteSpace($Type)) {
+        return
+    }
+
     if ([string]::IsNullOrWhiteSpace($Type)) {
         throw "Type is required. Use -Usage to show help."
     }
@@ -568,9 +583,10 @@ function Test-Parameters {
         throw "BuildName is required when IsBuild is used."
     }
 
-    if ($Type -notin @("Major", "Minor", "Patch", "Stable")) {
-        throw "Type must be Major, Minor, Patch, or Stable."
+    if ($Type -notin @("Major", "Minor", "Patch")) {
+        throw "Type must be Major, Minor, or Patch."
     }
+
 }
 
 <#
@@ -934,15 +950,16 @@ try {
         Assert-GitWorkingTreeClean -RepositoryPath $repositoryRoot
         $releasePlan = Get-ReleaseVersionPlan -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath
         $versionCoreOverride = $releasePlan.VersionCore
-        $preview = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
+        $preview = Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
         if (-not $releasePlan.ShouldMoveExistingTag) {
             Assert-GitTagAvailable -RepositoryPath $repositoryRoot -TagName $preview.Next.Version
         }
 
-        $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $false -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
+        $result = Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $false -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
         Complete-GitRelease -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -Version $result.Next.Version -MoveExistingTag $releasePlan.ShouldMoveExistingTag
     } else {
-        $result = Update-ProjectVersion -Path $ProjectPath -BumpType $Type -PreviewOnly $WhatIfPreference
+        $bumpType = if ($Stable -and [string]::IsNullOrWhiteSpace($Type)) { "Stable" } else { $Type }
+        $result = Update-ProjectVersion -Path $ProjectPath -BumpType $bumpType -PreviewOnly $WhatIfPreference
     }
 
     if ($result.WhatIf) {

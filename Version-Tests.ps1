@@ -6,7 +6,7 @@ $testGitHome = Join-Path $testRoot "GitHome"
 $testGitConfig = Join-Path $testGitHome ".gitconfig"
 $displayProjectPath = "/path/to/MyProject.csproj"
 $script:CompletedTests = 0
-$script:TotalTests = if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -eq "1") { 52 } else { 53 }
+$script:TotalTests = if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -eq "1") { 55 } else { 56 }
 
 function Reset-LastExitCode {
     $global:LASTEXITCODE = 0
@@ -393,7 +393,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.12.1" $output "Script version output must match"
+    Assert-Equal "1.15.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -679,9 +679,9 @@ function Get-CommandText {
     return ($parts -join " ")
 }
 
-function Test-StableTypePromotesPrereleaseAndBuildWithoutBump {
+function Test-StableSwitchPromotesPrereleaseAndBuildWithoutBump {
     $path = New-TestProject -Version "7.3.0-rc2+Build.123" -NumVer "7.3.0" -PrereleaseName "rc2" -BuildName "Build" -IsPrerelease $true -IsBuild $true
-    Invoke-Version $path @{ Type = "Stable" }
+    Invoke-Version $path @{ Stable = $true }
     $project = Read-Project $path
 
     Assert-Equal "7.3.0" $project.NumVer "Stable must not increment the numeric version"
@@ -692,9 +692,9 @@ function Test-StableTypePromotesPrereleaseAndBuildWithoutBump {
     Assert-Equal "" $project.BuildName "Stable must clear BuildName"
 }
 
-function Test-StableTypePromotesPrereleaseOnlyWithoutBump {
+function Test-StableSwitchPromotesPrereleaseOnlyWithoutBump {
     $path = New-TestProject -Version "7.3.0-rc2.1" -NumVer "7.3.0" -PrereleaseName "rc2.1" -IsPrerelease $true
-    Invoke-Version $path @{ Type = "Stable" }
+    Invoke-Version $path @{ Stable = $true }
     $project = Read-Project $path
 
     Assert-Equal "7.3.0" $project.NumVer "Stable must not increment the numeric version from prerelease"
@@ -703,9 +703,9 @@ function Test-StableTypePromotesPrereleaseOnlyWithoutBump {
     Assert-Equal "" $project.PrereleaseName "Stable must clear PrereleaseName"
 }
 
-function Test-StableTypePromotesBuildOnlyWithoutBump {
+function Test-StableSwitchPromotesBuildOnlyWithoutBump {
     $path = New-TestProject -Version "7.3.0+Build.123" -NumVer "7.3.0" -BuildName "Build" -IsBuild $true
-    Invoke-Version $path @{ Type = "Stable" }
+    Invoke-Version $path @{ Stable = $true }
     $project = Read-Project $path
 
     Assert-Equal "7.3.0" $project.NumVer "Stable must not increment the numeric version from build"
@@ -714,15 +714,33 @@ function Test-StableTypePromotesBuildOnlyWithoutBump {
     Assert-Equal "" $project.BuildName "Stable must clear BuildName"
 }
 
-function Test-StableSwitchWithPatchStillBumps {
+function Test-StableSwitchWithPatchBumpsAndPromotes {
     $path = New-TestProject -Version "7.3.0" -PrereleaseName "rc" -BuildName "Build" -IsPrerelease $true -IsBuild $true
     Invoke-Version $path @{ Type = "Patch"; Stable = $true }
     $project = Read-Project $path
 
     Assert-Equal "7.3.1" $project.NumVer "Patch with Stable switch must increment patch"
     Assert-Equal "7.3.1" $project.Version "Patch with Stable switch must generate normal Version"
-    Assert-Equal "False" $project.IsPrerelease "Patch con Stable must disable prerelease"
-    Assert-Equal "False" $project.IsBuild "Patch con Stable must disable build"
+    Assert-Equal "False" $project.IsPrerelease "Patch with Stable switch must disable prerelease"
+    Assert-Equal "False" $project.IsBuild "Patch with Stable switch must disable build"
+}
+
+function Test-StableSwitchAlonePromotesWithoutBump {
+    $path = New-TestProject -Version "7.3.0-rc+Build.123" -NumVer "7.3.0" -PrereleaseName "rc" -BuildName "Build" -IsPrerelease $true -IsBuild $true
+    Invoke-Version $path @{ Stable = $true }
+    $project = Read-Project $path
+
+    Assert-Equal "7.3.0" $project.NumVer "Stable switch alone must not increment NumVer"
+    Assert-Equal "7.3.0" $project.Version "Stable switch alone must promote to stable"
+    Assert-Equal "False" $project.IsPrerelease "Stable switch alone must disable prerelease"
+    Assert-Equal "False" $project.IsBuild "Stable switch alone must disable build"
+    Assert-Equal "" $project.PrereleaseName "Stable switch alone must clear PrereleaseName"
+    Assert-Equal "" $project.BuildName "Stable switch alone must clear BuildName"
+}
+
+function Test-StableTypeRejected {
+    $path = New-TestProject -Version "7.3.0"
+    Invoke-VersionExpectFailure $path @{ Type = "Stable" }
 }
 
 function Test-PrereleaseFromParameter {
@@ -806,14 +824,14 @@ function Test-VersionUpdateRefreshesBuildNumber {
 
 function Test-MissingVersionStartsFromDefaultInitialVersion {
     $path = New-TestProjectWithoutVersionProperties
-    Invoke-Version $path @{ Type = "Stable" }
+    Invoke-Version $path @{ Stable = $true }
     $project = Read-Project $path
 
     Assert-Equal "0.1.0" $project.Version "Missing Version and NumVer must start from the default initial version"
     Assert-Equal "0.1.0" $project.NumVer "Missing NumVer must store the default initial version"
     Assert-Match $project.BuildNumber '^\d+$' "Default initial version must still store BuildNumber epoch"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Stable"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Stable"
     Write-Host "Default Initial Version: $($project.Version)"
     Write-TestSeparator
 }
@@ -841,7 +859,7 @@ function Test-ReleaseCreatesCommitAndTag {
 
     $result = Invoke-WithIsolatedGitEnvironment {
         Reset-LastExitCode
-        $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
+        $scriptOutput = & $scriptPath -ProjectPath $path -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
             Output = $scriptOutput
@@ -871,7 +889,7 @@ function Test-ReleaseCreatesCommitAndTag {
     Assert-Equal "MyProject.csproj" $changedFiles[0] "Release commit must include only the project file"
     Assert-Match ($output -join "`n") "Release: True" "Release output must indicate release mode"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Patch -Release"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "Release Tag: $tag"
     Write-Host "Pushed Tag: $remoteTag"
     Write-TestSeparator
@@ -887,7 +905,7 @@ function Test-ReleaseWorksFromProjectSubdirectory {
 
     $result = Invoke-WithIsolatedGitEnvironment {
         Reset-LastExitCode
-        $scriptOutput = & $scriptPath -ProjectPath $path -Type Minor -Release *>&1
+        $scriptOutput = & $scriptPath -ProjectPath $path -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
             Output = $scriptOutput
@@ -914,7 +932,7 @@ function Test-ReleaseWorksFromProjectSubdirectory {
     Assert-Equal "tag: 7.4.0" $remoteSubject "Release from subdirectory must push the release commit to origin"
     Assert-Match ($output -join "`n") "Release: True" "Release from subdirectory output must indicate release mode"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Minor -Release"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "Release Subdirectory Tag: $tag"
     Write-Host "Pushed Subdirectory Tag: $remoteTag"
     Write-TestSeparator
@@ -947,7 +965,7 @@ function Test-ReleaseUsesConventionalCommitsSinceLatestSemVerTag {
 
     $result = Invoke-WithIsolatedGitEnvironment {
         Reset-LastExitCode
-        $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
+        $scriptOutput = & $scriptPath -ProjectPath $path -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
             Output = $scriptOutput
@@ -969,7 +987,7 @@ function Test-ReleaseUsesConventionalCommitsSinceLatestSemVerTag {
     Assert-Equal "1.1.0" $remoteTag "Release must push the conventional commit SemVer tag"
     Assert-Equal "tag: 1.1.0" $remoteSubject "Release must push the calculated conventional tag commit"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Patch -Release"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "Conventional Release Tag: $tag"
     Write-TestSeparator
 }
@@ -991,7 +1009,7 @@ function Test-ReleaseIgnoresNonConventionalCommits {
 
     $result = Invoke-WithIsolatedGitEnvironment {
         Reset-LastExitCode
-        $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
+        $scriptOutput = & $scriptPath -ProjectPath $path -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
             Output = $scriptOutput
@@ -1009,7 +1027,7 @@ function Test-ReleaseIgnoresNonConventionalCommits {
     Assert-Equal "0.2.2" $project.NumVer "Release must ignore non-conventional commits while calculating NumVer"
     Assert-Equal "0.2.2" $tag "Release must create the tag calculated only from conventional commits"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Patch -Release"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "Ignored Non-Conventional Commits Tag: $tag"
     Write-TestSeparator
 }
@@ -1027,7 +1045,7 @@ function Test-ReleaseMovesExistingTagWhenNoConventionalBumpExists {
 
     $result = Invoke-WithIsolatedGitEnvironment {
         Reset-LastExitCode
-        $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
+        $scriptOutput = & $scriptPath -ProjectPath $path -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
             Output = $scriptOutput
@@ -1049,7 +1067,7 @@ function Test-ReleaseMovesExistingTagWhenNoConventionalBumpExists {
     Assert-Equal $head $tagCommit "Release must move the existing local tag to the release commit"
     Assert-Equal $remoteBranchCommit $remoteTagCommit "Release must move the remote tag to the pushed release commit"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Patch -Release"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "Moved Release Tag: 1.2.3"
     Write-TestSeparator
 }
@@ -1065,7 +1083,7 @@ function Test-ReleaseUsesProjectVersionAndCommitsAfterNonSemVerLatestTag {
 
     $result = Invoke-WithIsolatedGitEnvironment {
         Reset-LastExitCode
-        $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
+        $scriptOutput = & $scriptPath -ProjectPath $path -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
             Output = $scriptOutput
@@ -1083,7 +1101,7 @@ function Test-ReleaseUsesProjectVersionAndCommitsAfterNonSemVerLatestTag {
     Assert-Equal "1.1.0" $project.NumVer "Release must calculate NumVer from project version and commits after a non-SemVer tag"
     Assert-Equal "1.1.0" $tag "Release must create the calculated SemVer tag when the latest tag is not SemVer"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Patch -Release"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "Non-SemVer Latest Tag Conventional Release: $tag"
     Write-TestSeparator
 }
@@ -1097,7 +1115,7 @@ function Test-ReleaseUsesProjectVersionAndAllCommitsWhenNoTagsExist {
 
     $result = Invoke-WithIsolatedGitEnvironment {
         Reset-LastExitCode
-        $scriptOutput = & $scriptPath -ProjectPath $path -Type Patch -Release *>&1
+        $scriptOutput = & $scriptPath -ProjectPath $path -Release *>&1
         return @{
             ExitCode = $LASTEXITCODE
             Output = $scriptOutput
@@ -1115,7 +1133,7 @@ function Test-ReleaseUsesProjectVersionAndAllCommitsWhenNoTagsExist {
     Assert-Equal "1.1.0" $project.NumVer "Release must calculate NumVer from project version and all commits when there are no tags"
     Assert-Equal "1.1.0" $tag "Release must create the calculated SemVer tag when there are no tags"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Patch -Release"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "No-Tag Conventional Release: $tag"
     Write-TestSeparator
 }
@@ -1133,7 +1151,7 @@ function Test-ReleaseFailsBeforeSavingWhenUntrackedFilesExist {
     try {
         Invoke-WithIsolatedGitEnvironment {
             Reset-LastExitCode
-            & $scriptPath -ProjectPath $path -Type Patch -Release *> $null
+            & $scriptPath -ProjectPath $path -Release *> $null
         }
     }
     catch {
@@ -1156,7 +1174,7 @@ function Test-ReleaseFailsBeforeSavingWhenUntrackedFilesExist {
     Assert-Match $errorMessage "Release requires a completely clean Git working tree" "Release must explain clean tree requirement"
     Assert-Match $errorMessage "Untracked files: \?\? notes\.txt" "Release must explain untracked files"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Patch -Release"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "Expected Failure: True"
     Write-Host "Error: $errorMessage"
     Write-TestSeparator
@@ -1178,7 +1196,7 @@ function Test-ReleaseFailsBeforeSavingWhenUnstagedChangesExist {
     try {
         Invoke-WithIsolatedGitEnvironment {
             Reset-LastExitCode
-            & $scriptPath -ProjectPath $path -Type Patch -Release *> $null
+            & $scriptPath -ProjectPath $path -Release *> $null
         }
     }
     catch {
@@ -1201,7 +1219,7 @@ function Test-ReleaseFailsBeforeSavingWhenUnstagedChangesExist {
     Assert-Match $errorMessage "Release requires a completely clean Git working tree" "Release must explain clean tree requirement"
     Assert-Match $errorMessage "Unstaged changes:  M notes\.txt" "Release must explain unstaged changes"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Patch -Release"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "Expected Failure: True"
     Write-Host "Error: $errorMessage"
     Write-TestSeparator
@@ -1221,7 +1239,7 @@ function Test-ReleaseFailsBeforeSavingWhenStagedChangesExist {
     try {
         Invoke-WithIsolatedGitEnvironment {
             Reset-LastExitCode
-            & $scriptPath -ProjectPath $path -Type Patch -Release *> $null
+            & $scriptPath -ProjectPath $path -Release *> $null
         }
     }
     catch {
@@ -1244,7 +1262,29 @@ function Test-ReleaseFailsBeforeSavingWhenStagedChangesExist {
     Assert-Match $errorMessage "Release requires a completely clean Git working tree" "Release must explain clean tree requirement"
     Assert-Match $errorMessage "Staged changes: A  notes\.txt" "Release must explain staged changes"
 
-    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Type Patch -Release"
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
+    Write-Host "Expected Failure: True"
+    Write-Host "Error: $errorMessage"
+    Write-TestSeparator
+}
+
+function Test-ReleaseRejectsTypeParameter {
+    $path = New-TestProject -Version "7.3.0" -NumVer "7.3.0"
+    $errorMessage = $null
+
+    try {
+        Reset-LastExitCode
+        & $scriptPath -ProjectPath $path -Release -Type Patch *> $null
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+    }
+
+    if ($null -eq $errorMessage) {
+        throw "Expected failure because -Release must calculate the version without -Type."
+    }
+
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release -Type Patch"
     Write-Host "Expected Failure: True"
     Write-Host "Error: $errorMessage"
     Write-TestSeparator
@@ -1318,7 +1358,7 @@ function Test-IsNotBuildClearsOnlyBuild {
 
 function Test-MajorResets {
     $path = New-TestProject -Version "7.3.9"
-    Invoke-Version $path @{ Type = "Major"; Stable = $true }
+    Invoke-Version $path @{ Type = "Major" }
     $project = Read-Project $path
 
     Assert-Equal "8.0.0" $project.NumVer "Major must reset minor and patch"
@@ -1370,10 +1410,12 @@ try {
     Invoke-ProjectBuildNumberGeneratesMissing
     Invoke-ProjectBuildNumberRefreshesExisting
     Invoke-ProjectBuildNumberExpectFailure
-    Test-StableTypePromotesPrereleaseAndBuildWithoutBump
-    Test-StableTypePromotesPrereleaseOnlyWithoutBump
-    Test-StableTypePromotesBuildOnlyWithoutBump
-    Test-StableSwitchWithPatchStillBumps
+    Test-StableSwitchPromotesPrereleaseAndBuildWithoutBump
+    Test-StableSwitchPromotesPrereleaseOnlyWithoutBump
+    Test-StableSwitchPromotesBuildOnlyWithoutBump
+    Test-StableSwitchWithPatchBumpsAndPromotes
+    Test-StableSwitchAlonePromotesWithoutBump
+    Test-StableTypeRejected
     Test-PrereleaseFromParameter
     Test-BuildFromParameter
     Test-PrereleaseAndBuild
@@ -1393,6 +1435,7 @@ try {
     Test-ReleaseFailsBeforeSavingWhenUntrackedFilesExist
     Test-ReleaseFailsBeforeSavingWhenUnstagedChangesExist
     Test-ReleaseFailsBeforeSavingWhenStagedChangesExist
+    Test-ReleaseRejectsTypeParameter
     Test-PrereleaseNameRequired
     Test-PrereleaseNameRequiredEvenWhenStored
     Test-BuildNameRequired
