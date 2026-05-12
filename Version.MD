@@ -2,7 +2,7 @@
 
 These instructions define the required release workflow for this repository.
 
-Expected `DotnetSemVerPs` script version: `1.15.2` or newer.
+Expected `DotnetSemVerPs` script version: `1.15.3` or newer.
 
 ## Project Path
 

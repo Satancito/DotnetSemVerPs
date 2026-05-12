@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.15.3 - 2026-05-12
+
+### Documentation
+
+- Documented how agents should copy and apply `Version.MD` in README and LEEME.
+
 ## 1.15.2 - 2026-05-12
 
 ### Documentation

@@ -4,7 +4,7 @@ Herramientas PowerShell para administrar versiones SemVer en archivos de proyect
 
 `DotnetSemVerPs` actualiza propiedades de version en archivos `.csproj`, soporta flujos estables, prerelease y metadata de build, genera build numbers como epoch UTC, e incluye un script de pruebas para validar escenarios de versionado.
 
-Version actual del script: `1.15.2`.
+Version actual del script: `1.15.3`.
 
 ### Funcionalidades
 
@@ -24,6 +24,24 @@ Version actual del script: `1.15.2`.
 Ver [CHANGELOG.md](CHANGELOG.md) para las notas de release.
 
 La documentacion en ingles esta disponible en [README.md](README.md).
+
+### Archivo De Instrucciones Para Agentes
+
+`Version.MD` es un archivo reutilizable de instrucciones para agentes de codigo
+que necesiten aplicar este flujo de release en otro repositorio .NET.
+
+Para usarlo en un repositorio destino:
+
+1. Copiar `Version.MD` al repositorio o carpeta deseada.
+2. Editar solamente el valor `$ProjectPath` dentro de `Version.MD` para que
+   apunte al archivo `.csproj` objetivo.
+3. Indicar al agente que aplique las instrucciones de ese archivo `Version.MD`.
+
+Luego el agente debe seguir el flujo ordenado en `Version.MD`: asegurar o
+actualizar el submodulo `Tools/DotnetSemVer`, refrescar el archivo de
+instrucciones desde el submodulo preservando `$ProjectPath`, validar/compilar/
+probar el proyecto, crear commits con Conventional Commits y finalmente ejecutar
+`Version.ps1 -Release`.
 
 ### Propiedades De Version
 
