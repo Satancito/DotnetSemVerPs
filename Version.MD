@@ -2,7 +2,7 @@
 
 These instructions define the required release workflow for this repository.
 
-Expected `DotnetSemVerPs` script version: `1.15.1` or newer.
+Expected `DotnetSemVerPs` script version: `1.15.2` or newer.
 
 ## Project Path
 
@@ -29,7 +29,17 @@ The agent must not calculate the next version manually.
 
 Always execute the release workflow in this order:
 
-1. Sync and update the `Tools/DotnetSemVer` submodule.
+1. Ensure the `Tools/DotnetSemVer` submodule exists.
+
+   If the submodule does not exist, add it:
+
+   ```powershell
+   git submodule add https://github.com/Satancito/DotnetSemVerPs.git Tools/DotnetSemVer
+   ```
+
+   If the submodule already exists, do not add it again.
+
+2. Sync and update the `Tools/DotnetSemVer` submodule.
 
    ```powershell
    git submodule sync --recursive Tools/DotnetSemVer
@@ -37,19 +47,29 @@ Always execute the release workflow in this order:
    git submodule update --remote --recursive Tools/DotnetSemVer
    ```
 
-2. Inspect the working tree and identify only the files that belong to the current change.
+3. Refresh this file from the updated submodule instructions.
+
+   Use the content from:
+
+   ```text
+   Tools/DotnetSemVer/Version.MD
+   ```
+
+   Preserve the current repository's `$ProjectPath` value. Replace the rest of this file with the updated content from `Tools/DotnetSemVer/Version.MD`.
+
+4. Inspect the working tree and identify only the files that belong to the current change.
 
    ```powershell
    git status --short
    ```
 
-3. Build the project referenced by `$ProjectPath`.
+5. Build the project referenced by `$ProjectPath`.
 
    ```powershell
    dotnet build $ProjectPath --configuration Release
    ```
 
-4. Run tests if test projects exist.
+6. Run tests if test projects exist.
 
    ```powershell
    dotnet test --configuration Release
@@ -57,7 +77,7 @@ Always execute the release workflow in this order:
 
    If no test projects exist, state that tests were not available and continue only after the build succeeds.
 
-5. Stage only files that belong to the current change.
+7. Stage only files that belong to the current change.
 
    ```powershell
    git add <required-file-1> <required-file-2>
@@ -65,19 +85,27 @@ Always execute the release workflow in this order:
 
    Prefer explicit file paths. Use `git add -A` only when every current change has been inspected and belongs to the commit.
 
-6. Review staged changes for secrets, credentials, private URLs, connection strings, certificates, tokens, or sensitive personal data.
+8. Review staged changes for secrets, credentials, private URLs, connection strings, certificates, tokens, or sensitive personal data.
 
    ```powershell
    git diff --cached
    ```
 
-7. Create one normal commit using Conventional Commits.
+9. Create one or more normal commits as needed.
 
    ```powershell
    git commit -m "<type>: <description>"
    ```
 
-8. Confirm the Git working tree is completely clean.
+   Every commit must use Conventional Commits. Use a short description in the subject and add a longer body when the change needs details for a future changelog. Make the longer description as detailed as possible: include what changed, why it changed, relevant implementation details, user-visible impact, validation performed, and any limitations or follow-up notes. Do not include personal data, secrets, credentials, tokens, certificates, private URLs, or connection strings.
+
+   ```powershell
+   git commit -m "<type>: <description>" -m "<longer description with relevant technical details>"
+   ```
+
+   Repeat steps 7 through 9 as needed until every intended change has been committed.
+
+10. Confirm the Git working tree is completely clean before releasing.
 
    ```powershell
    git status --short
@@ -85,7 +113,7 @@ Always execute the release workflow in this order:
 
    Do not continue if there are untracked files, unstaged changes, or staged changes waiting to be committed.
 
-9. Run `Version.ps1 -Release` against `$ProjectPath`.
+11. Run `Version.ps1 -Release` against `$ProjectPath`.
 
    ```powershell
    ./Tools/DotnetSemVer/Version.ps1 -ProjectPath $ProjectPath -Release

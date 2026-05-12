@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.15.2 - 2026-05-12
+
+### Documentation
+
+- Updated `Version.MD` to make submodule setup, instruction refresh, Conventional Commit creation, clean-tree validation, and release execution part of one ordered workflow.
+- Clarified that refreshed instructions must preserve the repository-specific `$ProjectPath`.
+- Expanded Conventional Commit guidance to allow one or more detailed commits before running `-Release`.
+
 ## 1.15.1 - 2026-05-12
 
 ### Documentation
