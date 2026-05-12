@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.15.1 - 2026-05-12
+
+### Documentation
+
+- Added `Version.MD` with reusable .NET release workflow instructions that use a unixlike `$ProjectPath` placeholder for the target `.csproj`.
+
 ## 1.15.0 - 2026-05-12
 
 ### Changed
