@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.16.0`.
+Current script version: `1.16.1`.
 
 ### Features
 
@@ -27,21 +27,21 @@ Spanish documentation is available in [LEEME.md](LEEME.md).
 
 ### Agent Instructions File
 
-`Version-Agent.MD` is a reusable instruction file for coding agents that need to
+`Agent-DotnetSemVerPs.MD` is a reusable instruction file for coding agents that need to
 apply this release workflow in another .NET repository.
 
 To use it in a target repository:
 
-1. Copy `Version-Agent.MD` to the desired repository root.
+1. Copy `Agent-DotnetSemVerPs.MD` to the desired repository root.
 2. Create `ProjectPath.txt` in that same root folder.
 3. Put only the unixlike path to the target `.csproj` file inside
    `ProjectPath.txt`. The path is relative to the repository root and should not
    start with `./`, for example `MySolution/MyProject/MyProject.csproj`.
-4. Tell the agent to apply the instructions from `Version-Agent.MD`.
+4. Tell the agent to apply the instructions from `Agent-DotnetSemVerPs.MD`.
 
-The agent should then follow the ordered workflow in `Version-Agent.MD`: ensure
+The agent should then follow the ordered workflow in `Agent-DotnetSemVerPs.MD`: ensure
 or update the `Tools/DotnetSemVerPs` submodule, copy the latest
-`Tools/DotnetSemVerPs/Version-Agent.MD` to the repository root, read the project
+`Tools/DotnetSemVerPs/Agent-DotnetSemVerPs.MD` to the repository root, read the project
 path from `ProjectPath.txt`, validate/build/test the project, create
 Conventional Commits, and finally run `Version.ps1 -Release`.
 

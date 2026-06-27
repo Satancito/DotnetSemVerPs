@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.16.1 - 2026-06-27
+
+### Documentation
+
+- Renamed the reusable agent instruction file from `Version-Agent.MD` to `Agent-DotnetSemVerPs.MD` to identify the repository workflow.
+- Updated README, LEEME, and release guide references to use `Agent-DotnetSemVerPs.MD`.
+
 ## 1.16.0 - 2026-06-27
 
 ### Added

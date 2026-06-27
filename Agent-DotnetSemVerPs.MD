@@ -2,7 +2,7 @@
 
 These instructions define the required release workflow for this repository.
 
-Expected `DotnetSemVerPs` script version: `1.16.0` or newer.
+Expected `DotnetSemVerPs` script version: `1.16.1` or newer.
 
 ## Project Path File
 
@@ -58,16 +58,16 @@ Always execute the release workflow in this order:
    If step 2 updates `Tools/DotnetSemVerPs` to a new commit, copy the updated agent instructions from:
 
    ```text
-   Tools/DotnetSemVerPs/Version-Agent.MD
+   Tools/DotnetSemVerPs/Agent-DotnetSemVerPs.MD
    ```
 
    ```powershell
-   Copy-Item -Path ./Tools/DotnetSemVerPs/Version-Agent.MD -Destination ./Version-Agent.MD -Force
+   Copy-Item -Path ./Tools/DotnetSemVerPs/Agent-DotnetSemVerPs.MD -Destination ./Agent-DotnetSemVerPs.MD -Force
    ```
 
-   Replace the root `Version-Agent.MD` with that file. Do not preserve or edit `$ProjectPath` in the Markdown file because the project path is read from root `ProjectPath.txt`.
+   Replace the root `Agent-DotnetSemVerPs.MD` with that file. Do not preserve or edit `$ProjectPath` in the Markdown file because the project path is read from root `ProjectPath.txt`.
 
-   If step 2 does not update the submodule to a new commit, do not copy `Version-Agent.MD`; continue with the current root file.
+   If step 2 does not update the submodule to a new commit, do not copy `Agent-DotnetSemVerPs.MD`; continue with the current root file.
 
 4. Inspect the working tree and identify only the files that belong to the current change.
 

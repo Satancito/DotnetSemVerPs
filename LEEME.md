@@ -4,7 +4,7 @@ Herramientas PowerShell para administrar versiones SemVer en archivos de proyect
 
 `DotnetSemVerPs` actualiza propiedades de version en archivos `.csproj`, soporta flujos estables, prerelease y metadata de build, genera build numbers como epoch UTC, e incluye un script de pruebas para validar escenarios de versionado.
 
-Version actual del script: `1.16.0`.
+Version actual del script: `1.16.1`.
 
 ### Funcionalidades
 
@@ -27,21 +27,21 @@ La documentacion en ingles esta disponible en [README.md](README.md).
 
 ### Archivo De Instrucciones Para Agentes
 
-`Version-Agent.MD` es un archivo reutilizable de instrucciones para agentes de
+`Agent-DotnetSemVerPs.MD` es un archivo reutilizable de instrucciones para agentes de
 codigo que necesiten aplicar este flujo de release en otro repositorio .NET.
 
 Para usarlo en un repositorio destino:
 
-1. Copiar `Version-Agent.MD` a la raiz del repositorio deseado.
+1. Copiar `Agent-DotnetSemVerPs.MD` a la raiz del repositorio deseado.
 2. Crear `ProjectPath.txt` en esa misma raiz.
 3. Colocar dentro de `ProjectPath.txt` solamente el path unixlike al `.csproj`
    objetivo. El path es relativo a la raiz del repositorio y no debe iniciar con
    `./`, por ejemplo `MySolution/MyProject/MyProject.csproj`.
-4. Indicar al agente que aplique las instrucciones de `Version-Agent.MD`.
+4. Indicar al agente que aplique las instrucciones de `Agent-DotnetSemVerPs.MD`.
 
-Luego el agente debe seguir el flujo ordenado en `Version-Agent.MD`: asegurar o
+Luego el agente debe seguir el flujo ordenado en `Agent-DotnetSemVerPs.MD`: asegurar o
 actualizar el submodulo `Tools/DotnetSemVerPs`, copiar el ultimo
-`Tools/DotnetSemVerPs/Version-Agent.MD` a la raiz del repositorio, leer el path
+`Tools/DotnetSemVerPs/Agent-DotnetSemVerPs.MD` a la raiz del repositorio, leer el path
 del proyecto desde `ProjectPath.txt`, validar/compilar/probar el proyecto, crear
 commits con Conventional Commits y finalmente ejecutar `Version.ps1 -Release`.
 

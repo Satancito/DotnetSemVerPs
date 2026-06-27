@@ -5,7 +5,7 @@ This file defines the required workflow for publishing changes from this reposit
 This file is for this repository only. For reusable agent instructions that are copied into other repositories, use:
 
 ```text
-Version-Agent.MD
+Agent-DotnetSemVerPs.MD
 ```
 
 ## Release Flow
@@ -53,7 +53,7 @@ Version-Agent.MD
    ```text
    README.md
    LEEME.md
-   Version-Agent.MD
+   Agent-DotnetSemVerPs.MD
    ```
 
    Add or update the matching release notes in:
@@ -78,11 +78,11 @@ Also update repository documentation when the change affects usage, installation
 README.md
 LEEME.md
 CHANGELOG.md
-Version-Agent.MD
+Agent-DotnetSemVerPs.MD
 Version.MD
 ```
 
-Keep `README.md` and `LEEME.md` aligned. Keep `Version-Agent.MD` focused on reusable agent workflow for other repositories. Keep this `Version.MD` focused on releasing this repository itself.
+Keep `README.md` and `LEEME.md` aligned. Keep `Agent-DotnetSemVerPs.MD` focused on reusable agent workflow for other repositories. Keep this `Version.MD` focused on releasing this repository itself.
 
 ## Validate Before Commit
 
@@ -121,7 +121,7 @@ Do not stage local project environment files, temporary files, generated scratch
 Example:
 
 ```powershell
-git add Version.ps1 Version-Tests.ps1 README.md LEEME.md CHANGELOG.md Version-Agent.MD Version.MD
+git add Version.ps1 Version-Tests.ps1 README.md LEEME.md CHANGELOG.md Agent-DotnetSemVerPs.MD Version.MD
 ```
 
 Adjust the staged file list to match the actual changes.
