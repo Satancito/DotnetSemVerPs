@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.18.0 - 2026-06-27
+
+### Added
+
+- Added `NuGetPush` project metadata during `-Release` and `-PrepareRelease` so pipelines can skip NuGet publishing when no version-bumping Conventional Commits are present.
+- Added `PackageReleaseNotes` generation from Conventional Commit headers since the latest reachable tag during `-Release` and `-PrepareRelease`.
+
+### Tests
+
+- Added release assertions for `NuGetPush` and `PackageReleaseNotes` when commits do and do not bump the package version.
+
+### Documentation
+
+- Documented `NuGetPush`, `PackageReleaseNotes`, and the agent workflow that uses them before `-PublishRelease`.
+- Clarified that agent-created Conventional Commits must use precise technical descriptions because commit headers become package release notes.
+- Clarified that agents should create separate staging groups and Conventional Commits for distinct logical changes.
+- Clarified that after refreshing the agent file from the submodule, agents must continue from the copied root file while skipping submodule refresh steps.
+
 ## 1.17.0 - 2026-06-27
 
 ### Added

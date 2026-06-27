@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.17.0`.
+Current script version: `1.18.0`.
 
 ### Features
 
@@ -16,6 +16,7 @@ Current script version: `1.17.0`.
 - Creates missing version properties automatically.
 - Can create and push Git release commits and SemVer tags with `-Release`.
 - Can split consumer releases into `-PrepareRelease` and `-PublishRelease` so documentation can be updated with the calculated version before publishing.
+- Can set `NuGetPush` and `PackageReleaseNotes` during release preparation for package publishing pipelines.
 - Can validate an external SemVer string with `-Validate -SemVer <semver>`.
 - Can run the local test script with `-Tests`.
 - Includes a test script with common versioning scenarios.
@@ -55,6 +56,9 @@ The script manages these properties in the target `.csproj`:
 <Version>7.3.1-rc2.1+Build.1777848010</Version>
 <NumVer>7.3.1</NumVer>
 <BuildNumber>1777848010</BuildNumber>
+<NuGetPush>True</NuGetPush>
+<PackageReleaseNotes>- feat: add export flow
+- fix: correct package metadata</PackageReleaseNotes>
 <PrereleaseName>rc2.1</PrereleaseName>
 <BuildName>Build</BuildName>
 <IsPrerelease>True</IsPrerelease>
@@ -66,6 +70,8 @@ The script manages these properties in the target `.csproj`:
 | `Version` | Full generated SemVer value. |
 | `NumVer` | Numeric version only: `Major.Minor.Patch`. |
 | `BuildNumber` | UTC epoch seconds generated on each version update. |
+| `NuGetPush` | `True` when release Conventional Commits contain a version-bumping change (`feat`, `fix`, `perf`, or breaking change); otherwise `False`. Pipelines can use it to decide whether to push a NuGet package. |
+| `PackageReleaseNotes` | Release notes generated from Conventional Commit headers since the latest reachable tag during `-Release` or `-PrepareRelease`. |
 | `PrereleaseName` | Prerelease identifier, for example `rc`, `rc2`, `rc2.1`. |
 | `BuildName` | Build metadata prefix, for example `Build`. |
 | `IsPrerelease` | Indicates whether prerelease should be used. |
@@ -224,6 +230,14 @@ the consumer repository updates documentation or other version-dependent files,
 `-PublishRelease` reads the prepared project `Version`, stages all current
 repository changes with `git add -A`, commits them with `tag: <version>`, creates
 the SemVer tag, then pushes the current branch and tag to `origin`.
+
+`-Release` and `-PrepareRelease` also update package publishing metadata in the
+project. `NuGetPush` is `True` only when the analyzed Conventional Commits
+contain a version-bumping change (`feat`, `fix`, `perf`, or breaking change).
+If the release only contains non-bumping commits such as `docs`, `test`, `chore`,
+or non-conventional messages, `NuGetPush` is `False`. `PackageReleaseNotes` is
+generated from the Conventional Commit headers found since the latest reachable
+tag so CI/CD can reuse the `.csproj` value.
 
 `-Release` checks the stored project state before saving. If the project has no
 stored prerelease or build metadata state, the release is stable and keeps the
@@ -524,6 +538,7 @@ After NumVer: 7.3.1
 - `-Release` stages and commits only the project version change with `tag: <version>`, creates the SemVer tag, then pushes the current branch and tag to `origin`.
 - `-PrepareRelease` saves the calculated version to the project and returns it so consumer docs can be updated before publication.
 - `-PublishRelease` commits all current repository changes, creates the prepared SemVer tag, then pushes the current branch and tag to `origin`.
+- `-Release` and `-PrepareRelease` set `NuGetPush` and `PackageReleaseNotes` in the project before publishing or before the consumer documentation update step.
 - `-IsPrerelease` requires a non-empty `-PrereleaseName`.
 - `-IsBuild` requires a non-empty `-BuildName`.
 - `-IsNotPrerelease` overrides `-IsPrerelease` and clears stored `PrereleaseName`.

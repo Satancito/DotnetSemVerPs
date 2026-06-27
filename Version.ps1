@@ -69,7 +69,7 @@ param(
     [string]$SemVer
 )
 
-$ScriptVersion = "1.17.0"
+$ScriptVersion = "1.18.0"
 $DefaultInitialVersionCore = "0.1.0"
 $SemVerPattern = '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
 
@@ -97,6 +97,8 @@ csproj properties:
   Version          Generated full SemVer value.
   NumVer           Numeric Major.Minor.Patch version.
   BuildNumber      UTC epoch seconds. Recomputed on every version update.
+  NuGetPush        true/false. Indicates whether the release contains version-bumping changes that should publish a NuGet package.
+  PackageReleaseNotes Generated from Conventional Commit messages during Release or PrepareRelease.
   PrereleaseName   Prerelease identifier, for example rc, rc2, rc2.1.
   BuildName        Build identifier, for example Build.
   IsPrerelease     true/false.
@@ -151,6 +153,8 @@ Rules:
   Release requires a valid Git repository and a completely clean Git working tree before it starts.
   Release fails before saving if untracked, unstaged, or staged changes already exist.
   Release uses commits since the latest SemVer tag to calculate the next version. breaking changes increment major, feat increments minor, and fix/perf increment patch.
+  Release and PrepareRelease set NuGetPush to True only when Conventional Commits include a version-bumping change. Otherwise NuGetPush is False.
+  Release and PrepareRelease generate PackageReleaseNotes from Conventional Commit headers since the latest reachable tag.
   If the generated SemVer tag already exists, Release increments patch until it finds an available tag.
   If the latest tag is not SemVer, Release starts from the project version and scans commits after that tag.
   If no tag exists, Release starts from the project version and scans all commits.
@@ -414,25 +418,63 @@ function Get-GitCommitMessagesSinceTag {
 function Get-ConventionalCommitBumpType {
     param([string]$Message)
 
-    if ([string]::IsNullOrWhiteSpace($Message)) {
+    $info = Get-ConventionalCommitInfo -Message $Message
+    if ($null -eq $info) {
         return ""
     }
 
+    return $info.BumpType
+}
+
+function Get-ConventionalCommitInfo {
+    param([string]$Message)
+
+    if ([string]::IsNullOrWhiteSpace($Message)) {
+        return $null
+    }
+
     $header = (($Message -split "`r?`n") | Select-Object -First 1).Trim()
-    $isBreaking = $header -match '^[A-Za-z]+(?:\([^)]+\))?!:' -or $Message -match '(?m)^BREAKING[ -]CHANGE:'
+    $match = [regex]::Match($header, '^(?<type>[A-Za-z]+)(?:\((?<scope>[^)]+)\))?(?<breaking>!)?:\s*(?<description>.+)$')
+    if (-not $match.Success) {
+        return $null
+    }
+
+    $type = $match.Groups["type"].Value
+    $isBreaking = -not [string]::IsNullOrWhiteSpace($match.Groups["breaking"].Value) -or $Message -match '(?m)^BREAKING[ -]CHANGE:'
+    $bumpType = ""
     if ($isBreaking) {
-        return "Major"
+        $bumpType = "Major"
+    } elseif ($type -eq "feat") {
+        $bumpType = "Minor"
+    } elseif ($type -in @("fix", "perf")) {
+        $bumpType = "Patch"
     }
 
-    if ($header -match '^feat(?:\([^)]+\))?:') {
-        return "Minor"
+    return @{
+        Header = $header
+        Type = $type
+        Scope = $match.Groups["scope"].Value
+        Description = $match.Groups["description"].Value
+        IsBreaking = $isBreaking
+        BumpType = $bumpType
+    }
+}
+
+function Get-PackageReleaseNotes {
+    param([object[]]$CommitInfos)
+
+    $headers = @()
+    foreach ($info in @($CommitInfos)) {
+        if ($null -ne $info -and -not [string]::IsNullOrWhiteSpace($info.Header)) {
+            $headers += "- $($info.Header)"
+        }
     }
 
-    if ($header -match '^(fix|perf)(?:\([^)]+\))?:') {
-        return "Patch"
+    if ($headers.Count -eq 0) {
+        return "No Conventional Commit release notes."
     }
 
-    return ""
+    return $headers -join "`n"
 }
 
 function Get-ProjectVersionCore {
@@ -468,13 +510,20 @@ function Get-ReleaseVersionPlan {
     )
 
     $latestTag = Get-LatestGitTag -RepositoryPath $RepositoryPath
+    $commitInfos = @()
+    $hasVersionBump = $false
+
     if ([string]::IsNullOrWhiteSpace($latestTag) -or -not (Test-SemVer $latestTag)) {
         $versionCore = Get-ProjectVersionCore -Path $ProjectPath
         $messages = Get-GitCommitMessagesSinceTag -RepositoryPath $RepositoryPath -TagName $latestTag
         foreach ($message in $messages) {
-            $bumpType = Get-ConventionalCommitBumpType -Message $message
-            if (-not [string]::IsNullOrWhiteSpace($bumpType)) {
-                $versionCore = Update-SemVerCore $versionCore $bumpType
+            $info = Get-ConventionalCommitInfo -Message $message
+            if ($null -ne $info) {
+                $commitInfos += $info
+                if (-not [string]::IsNullOrWhiteSpace($info.BumpType)) {
+                    $hasVersionBump = $true
+                    $versionCore = Update-SemVerCore $versionCore $info.BumpType
+                }
             }
         }
 
@@ -482,6 +531,8 @@ function Get-ReleaseVersionPlan {
             HasSemVerTag = $false
             LatestTag = $latestTag
             VersionCore = $versionCore
+            HasVersionBump = $hasVersionBump
+            PackageReleaseNotes = Get-PackageReleaseNotes -CommitInfos $commitInfos
         }
     }
 
@@ -489,9 +540,13 @@ function Get-ReleaseVersionPlan {
     $messages = Get-GitCommitMessagesSinceTag -RepositoryPath $RepositoryPath -TagName $latestTag
 
     foreach ($message in $messages) {
-        $bumpType = Get-ConventionalCommitBumpType -Message $message
-        if (-not [string]::IsNullOrWhiteSpace($bumpType)) {
-            $versionCore = Update-SemVerCore $versionCore $bumpType
+        $info = Get-ConventionalCommitInfo -Message $message
+        if ($null -ne $info) {
+            $commitInfos += $info
+            if (-not [string]::IsNullOrWhiteSpace($info.BumpType)) {
+                $hasVersionBump = $true
+                $versionCore = Update-SemVerCore $versionCore $info.BumpType
+            }
         }
     }
 
@@ -499,6 +554,8 @@ function Get-ReleaseVersionPlan {
         HasSemVerTag = $true
         LatestTag = $latestTag
         VersionCore = $versionCore
+        HasVersionBump = $hasVersionBump
+        PackageReleaseNotes = Get-PackageReleaseNotes -CommitInfos $commitInfos
     }
 }
 
@@ -641,7 +698,7 @@ function Invoke-PrepareRelease {
     $preview = Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
     Assert-GitTagAvailable -RepositoryPath $RepositoryPath -TagName $preview.Next.Version
 
-    return Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $PreviewOnly -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
+    return Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $PreviewOnly -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride -NuGetPushOverride $releasePlan.HasVersionBump -PackageReleaseNotesOverride $releasePlan.PackageReleaseNotes
 }
 
 
@@ -826,7 +883,9 @@ function Update-ProjectVersion {
         [string]$BumpType,
         [bool]$PreviewOnly = $false,
         [string]$BuildNumberOverride = "",
-        [string]$VersionCoreOverride = ""
+        [string]$VersionCoreOverride = "",
+        [object]$NuGetPushOverride = $null,
+        [string]$PackageReleaseNotesOverride = $null
     )
 
     if (-not (Test-Path $Path)) {
@@ -843,6 +902,8 @@ function Update-ProjectVersion {
     $versionProperty = Get-OrCreate-Property $project $propertyGroup "Version"
     $numVerProperty = Get-OrCreate-Property $project $propertyGroup "NumVer"
     $buildNumberProperty = Get-OrCreate-Property $project $propertyGroup "BuildNumber"
+    $nuGetPushProperty = Get-OrCreate-Property $project $propertyGroup "NuGetPush"
+    $packageReleaseNotesProperty = Get-OrCreate-Property $project $propertyGroup "PackageReleaseNotes"
     $prereleaseNameProperty = Get-OrCreate-Property $project $propertyGroup "PrereleaseName"
     $buildNameProperty = Get-OrCreate-Property $project $propertyGroup "BuildName"
     $isPrereleaseProperty = Get-OrCreate-Property $project $propertyGroup "IsPrerelease"
@@ -852,6 +913,8 @@ function Update-ProjectVersion {
         Version = $versionProperty.InnerText
         NumVer = $numVerProperty.InnerText
         BuildNumber = $buildNumberProperty.InnerText
+        NuGetPush = $nuGetPushProperty.InnerText
+        PackageReleaseNotes = $packageReleaseNotesProperty.InnerText
         IsPrerelease = Get-BoolProperty $propertyGroup "IsPrerelease"
         IsBuild = Get-BoolProperty $propertyGroup "IsBuild"
         PrereleaseName = $prereleaseNameProperty.InnerText
@@ -873,6 +936,12 @@ function Update-ProjectVersion {
         ConvertTo-SemVerCore $VersionCoreOverride
     }
     $buildNumber = if ([string]::IsNullOrWhiteSpace($BuildNumberOverride)) { New-BuildNumber } else { $BuildNumberOverride }
+    $nuGetPush = if ($null -eq $NuGetPushOverride) {
+        if ([string]::IsNullOrWhiteSpace($nuGetPushProperty.InnerText)) { $false } else { [bool]::Parse($nuGetPushProperty.InnerText) }
+    } else {
+        [bool]$NuGetPushOverride
+    }
+    $packageReleaseNotes = if ($null -eq $PackageReleaseNotesOverride) { $packageReleaseNotesProperty.InnerText } else { $PackageReleaseNotesOverride }
 
     $effectivePrereleaseName = $prereleaseNameProperty.InnerText
     $effectiveBuildName = $buildNameProperty.InnerText
@@ -940,6 +1009,8 @@ function Update-ProjectVersion {
         $versionProperty.InnerText = $semVer
         $numVerProperty.InnerText = $newCore
         $buildNumberProperty.InnerText = $buildNumber
+        $nuGetPushProperty.InnerText = $nuGetPush.ToString()
+        $packageReleaseNotesProperty.InnerText = $packageReleaseNotes
         $prereleaseNameProperty.InnerText = $effectivePrereleaseName
         $buildNameProperty.InnerText = $effectiveBuildName
         $isPrereleaseProperty.InnerText = $effectiveIsPrerelease.ToString()
@@ -952,6 +1023,8 @@ function Update-ProjectVersion {
         Version = $semVer
         NumVer = $newCore
         BuildNumber = $buildNumber
+        NuGetPush = $nuGetPush
+        PackageReleaseNotes = $packageReleaseNotes
         IsPrerelease = $effectiveIsPrerelease
         IsBuild = $effectiveIsBuild
         PrereleaseName = $effectivePrereleaseName
@@ -973,6 +1046,8 @@ function Write-VersionState {
     Write-Host "Version: $($State.Version)"
     Write-Host "NumVer: $($State.NumVer)"
     Write-Host "BuildNumber: $($State.BuildNumber)"
+    Write-Host "NuGetPush: $($State.NuGetPush)"
+    Write-Host "PackageReleaseNotes: $($State.PackageReleaseNotes)"
     Write-Host "IsPrerelease: $($State.IsPrerelease)"
     Write-Host "IsBuild: $($State.IsBuild)"
     Write-Host "PrereleaseName: $($State.PrereleaseName)"
@@ -1089,6 +1164,8 @@ try {
     Write-Host "Version: $($result.Next.Version)"
     Write-Host "NumVer: $($result.Next.NumVer)"
     Write-Host "BuildNumber: $($result.Next.BuildNumber)"
+    Write-Host "NuGetPush: $($result.Next.NuGetPush)"
+    Write-Host "PackageReleaseNotes: $($result.Next.PackageReleaseNotes)"
     Write-Host "IsPrerelease: $($result.Next.IsPrerelease)"
     Write-Host "IsBuild: $($result.Next.IsBuild)"
     Write-Host "WhatIf: $($result.WhatIf)"

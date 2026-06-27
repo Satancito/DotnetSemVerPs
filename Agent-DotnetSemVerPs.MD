@@ -2,7 +2,7 @@
 
 These instructions define the required release workflow for this repository.
 
-Expected `DotnetSemVerPs` script version: `1.17.0` or newer.
+Expected `DotnetSemVerPs` script version: `1.18.0` or newer.
 
 ## Project Path File
 
@@ -27,6 +27,7 @@ Create a safe release by:
 - validating the current code before versioning
 - committing the actual change with Conventional Commits
 - letting `Tools/DotnetSemVerPs/Version.ps1` calculate and store the SemVer release
+- letting the script store `NuGetPush` and `PackageReleaseNotes` in the project file from Conventional Commits
 - updating consumer documentation or metadata with the prepared version
 - letting the script publish the release commit and Git tag
 
@@ -68,6 +69,8 @@ Always execute the release workflow in this order:
 
    Replace the root `Agent-DotnetSemVerPs.MD` with that file. Do not preserve or edit `$ProjectPath` in the Markdown file because the project path is read from root `ProjectPath.txt`.
 
+   After copying the updated file to the repository root, apply the copied root `Agent-DotnetSemVerPs.MD` instructions from that point forward. When re-applying the copied file, skip the submodule update steps and skip this copy step to avoid repeating the refresh loop. Continue with the working tree inspection step.
+
    If step 2 does not update the submodule to a new commit, do not copy `Agent-DotnetSemVerPs.MD`; continue with the current root file.
 
 4. Inspect the working tree and identify only the files that belong to the current change.
@@ -90,13 +93,15 @@ Always execute the release workflow in this order:
 
    If no test projects exist, state that tests were not available and continue only after the build succeeds.
 
-7. Stage only files that belong to the current change.
+7. Stage only files that belong to one coherent Conventional Commit.
 
    ```powershell
    git add <required-file-1> <required-file-2>
    ```
 
-   Prefer explicit file paths. Use `git add -A` only when every current change has been inspected and belongs to the commit.
+   Prefer explicit file paths. Use `git add -A` only when every current change has been inspected and belongs to the same commit.
+
+   Create as many separate staging groups as needed. If the work contains multiple logical changes, split them into multiple commits so each commit has the correct Conventional Commit type and precise release-note description.
 
 8. Review staged changes for secrets, credentials, private URLs, connection strings, certificates, tokens, or sensitive personal data.
 
@@ -110,13 +115,32 @@ Always execute the release workflow in this order:
    git commit -m "<type>: <description>"
    ```
 
-   Every commit must use Conventional Commits. Use a short description in the subject and add a longer body when the change needs details for a future changelog. Make the longer description as detailed as possible: include what changed, why it changed, relevant implementation details, user-visible impact, validation performed, and any limitations or follow-up notes. Do not include personal data, secrets, credentials, tokens, certificates, private URLs, or connection strings.
+   Every commit must use Conventional Commits. The subject description is used to generate `PackageReleaseNotes`, so make it precise, technical, and useful by itself. Prefer a concrete description of the changed behavior or implementation over generic wording.
+
+   Good subjects:
+
+   ```text
+   feat(auth): add refresh token rotation for mobile clients
+   fix(storage): persist encrypted secret metadata after key rotation
+   perf(cache): reduce project version scan allocations
+   docs(agent): document prepared release metadata workflow
+   ```
+
+   Weak subjects to avoid:
+
+   ```text
+   fix: changes
+   feat: update stuff
+   chore: misc
+   ```
+
+   Add a longer body when the change needs details for future changelog or audit context. Make the longer description as detailed as possible: include what changed, why it changed, relevant implementation details, user-visible impact, validation performed, and any limitations or follow-up notes. Do not include personal data, secrets, credentials, tokens, certificates, private URLs, or connection strings.
 
    ```powershell
    git commit -m "<type>: <description>" -m "<longer description with relevant technical details>"
    ```
 
-   Repeat steps 7 through 9 as needed until every intended change has been committed.
+   Repeat steps 7 through 9 as needed until every intended change has been committed. Use separate stages and commits whenever separate changes need different Conventional Commit types or separate release-note lines.
 
 10. Confirm the Git working tree is completely clean before preparing the release.
 
@@ -134,7 +158,17 @@ Always execute the release workflow in this order:
 
    Do not pass `-Type` with `-PrepareRelease`.
 
-12. Update consumer repository files that depend on the new version.
+12. Read the prepared package metadata from the project file.
+
+   After `-PrepareRelease`, the target `.csproj` contains:
+
+   - `Version`
+   - `NuGetPush`
+   - `PackageReleaseNotes`
+
+   Use these values when updating consumer documentation, package metadata, or pipeline-facing files. `NuGetPush` tells CI/CD whether the release contains a version-bumping change that should publish the NuGet package. `PackageReleaseNotes` is generated from Conventional Commit headers since the latest reachable tag.
+
+13. Update consumer repository files that depend on the new version or package release notes.
 
    Use `$ReleaseVersion` to update any relevant files in the consumer repository, such as:
 
@@ -146,18 +180,18 @@ Always execute the release workflow in this order:
    - deployment manifests
    - examples that show the current package or project version
 
-   Only update files that actually depend on the version or release notes. Do not invent unrelated documentation changes.
+   Only update files that actually depend on the version, `NuGetPush`, or `PackageReleaseNotes`. Do not invent unrelated documentation changes.
 
-13. Inspect the prepared release changes.
+14. Inspect the prepared release changes.
 
    ```powershell
    git status --short
    git diff
    ```
 
-   The changes should include the prepared `.csproj` version update and any consumer documentation or metadata updates that use `$ReleaseVersion`.
+   The changes should include the prepared `.csproj` version, `NuGetPush`, and `PackageReleaseNotes` update, plus any consumer documentation or metadata updates that use `$ReleaseVersion`.
 
-14. Run `Version.ps1 -PublishRelease` against `$ProjectPath`.
+15. Run `Version.ps1 -PublishRelease` against `$ProjectPath`.
 
    ```powershell
    ./Tools/DotnetSemVerPs/Version.ps1 -ProjectPath $ProjectPath -PublishRelease
@@ -194,7 +228,8 @@ Commit message rules:
 | Rule | Requirement |
 |---|---|
 | Format | Use `<type>: <description>` or `<type>(<scope>): <description>`. |
-| Detail | Write enough detail to explain the technical change clearly. |
+| Detail | Write concise, precise, technical descriptions because commit headers become `PackageReleaseNotes`. |
+| Granularity | Create as many staged commits as needed so each logical change has its own Conventional Commit and release-note line. |
 | Privacy | Do not include personal, private, or sensitive information. |
 | Secrets | Do not include credentials, API keys, tokens, passwords, secrets, connection strings, certificates, or private URLs. |
 | Staged review | Before committing, verify staged changes do not contain sensitive data. |

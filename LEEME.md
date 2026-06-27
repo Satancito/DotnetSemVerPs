@@ -4,7 +4,7 @@ Herramientas PowerShell para administrar versiones SemVer en archivos de proyect
 
 `DotnetSemVerPs` actualiza propiedades de version en archivos `.csproj`, soporta flujos estables, prerelease y metadata de build, genera build numbers como epoch UTC, e incluye un script de pruebas para validar escenarios de versionado.
 
-Version actual del script: `1.17.0`.
+Version actual del script: `1.18.0`.
 
 ### Funcionalidades
 
@@ -16,6 +16,7 @@ Version actual del script: `1.17.0`.
 - Crea automaticamente las propiedades de version faltantes.
 - Puede crear y subir commits de release y tags SemVer con `-Release`.
 - Puede dividir releases de proyectos consumidores con `-PrepareRelease` y `-PublishRelease` para actualizar documentacion con la version calculada antes de publicar.
+- Puede establecer `NuGetPush` y `PackageReleaseNotes` durante la preparacion del release para pipelines de publicacion de paquetes.
 - Puede validar un string SemVer externo con `-Validate -SemVer <semver>`.
 - Puede ejecutar el script local de pruebas con `-Tests`.
 - Incluye un script de pruebas con escenarios comunes de versionado.
@@ -56,6 +57,9 @@ El script administra estas propiedades en el `.csproj` objetivo:
 <Version>7.3.1-rc2.1+Build.1777848010</Version>
 <NumVer>7.3.1</NumVer>
 <BuildNumber>1777848010</BuildNumber>
+<NuGetPush>True</NuGetPush>
+<PackageReleaseNotes>- feat: add export flow
+- fix: correct package metadata</PackageReleaseNotes>
 <PrereleaseName>rc2.1</PrereleaseName>
 <BuildName>Build</BuildName>
 <IsPrerelease>True</IsPrerelease>
@@ -67,6 +71,8 @@ El script administra estas propiedades en el `.csproj` objetivo:
 | `Version` | Valor SemVer completo generado. |
 | `NumVer` | Version numerica solamente: `Major.Minor.Patch`. |
 | `BuildNumber` | Epoch UTC generado en cada actualizacion de version. |
+| `NuGetPush` | `True` cuando los Conventional Commits de release contienen un cambio que incrementa version (`feat`, `fix`, `perf`, o breaking change); caso contrario `False`. Los pipelines pueden usarlo para decidir si hacen push del paquete NuGet. |
+| `PackageReleaseNotes` | Notas de release generadas desde los encabezados Conventional Commit desde el ultimo tag alcanzable durante `-Release` o `-PrepareRelease`. |
 | `PrereleaseName` | Identificador prerelease, por ejemplo `rc`, `rc2`, `rc2.1`. |
 | `BuildName` | Prefijo de metadata de build, por ejemplo `Build`. |
 | `IsPrerelease` | Indica si debe usarse prerelease. |
@@ -227,6 +233,15 @@ la version, `-PublishRelease` lee el `Version` preparado del proyecto, agrega al
 stage todos los cambios actuales del repositorio con `git add -A`, los commitea
 con `tag: <version>`, crea el tag SemVer y luego sube el branch actual y el tag a
 `origin`.
+
+`-Release` y `-PrepareRelease` tambien actualizan metadata de publicacion de
+paquete en el proyecto. `NuGetPush` queda en `True` solo cuando los Conventional
+Commits analizados contienen un cambio que incrementa version (`feat`, `fix`,
+`perf`, o breaking change). Si el release solo contiene commits que no
+incrementan version como `docs`, `test`, `chore`, o mensajes no conventional,
+`NuGetPush` queda en `False`. `PackageReleaseNotes` se genera desde los
+encabezados Conventional Commit encontrados desde el ultimo tag alcanzable para
+que CI/CD pueda reutilizar el valor del `.csproj`.
 
 `-Release` revisa el estado guardado del proyecto antes de guardar. Si el
 proyecto no tiene prerelease ni metadata de build guardados, el release es
@@ -528,6 +543,7 @@ After NumVer: 7.3.1
 - `-Release` agrega al stage y commitea solo el cambio de version del proyecto con `tag: <version>`, crea el tag SemVer, y luego sube el branch actual y el tag a `origin`.
 - `-PrepareRelease` guarda la version calculada en el proyecto y la retorna para que la documentacion del consumidor pueda actualizarse antes de publicar.
 - `-PublishRelease` commitea todos los cambios actuales del repositorio, crea el tag SemVer preparado y luego sube el branch actual y el tag a `origin`.
+- `-Release` y `-PrepareRelease` establecen `NuGetPush` y `PackageReleaseNotes` en el proyecto antes de publicar o antes del paso de actualizar documentacion del consumidor.
 - `-IsPrerelease` requiere un `-PrereleaseName` no vacio.
 - `-IsBuild` requiere un `-BuildName` no vacio.
 - `-IsNotPrerelease` sobreescribe `-IsPrerelease` y limpia `PrereleaseName` guardado.
