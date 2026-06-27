@@ -69,7 +69,7 @@ param(
     [string]$SemVer
 )
 
-$ScriptVersion = "1.18.0"
+$ScriptVersion = "1.18.2"
 $DefaultInitialVersionCore = "0.1.0"
 $SemVerPattern = '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
 
@@ -98,7 +98,7 @@ csproj properties:
   NumVer           Numeric Major.Minor.Patch version.
   BuildNumber      UTC epoch seconds. Recomputed on every version update.
   NuGetPush        true/false. Indicates whether the release contains version-bumping changes that should publish a NuGet package.
-  PackageReleaseNotes Generated from Conventional Commit messages during Release or PrepareRelease.
+  PackageReleaseNotes Generated from Conventional Commit messages during Release or PrepareRelease. Written as CDATA.
   PrereleaseName   Prerelease identifier, for example rc, rc2, rc2.1.
   BuildName        Build identifier, for example Build.
   IsPrerelease     true/false.
@@ -154,7 +154,7 @@ Rules:
   Release fails before saving if untracked, unstaged, or staged changes already exist.
   Release uses commits since the latest SemVer tag to calculate the next version. breaking changes increment major, feat increments minor, and fix/perf increment patch.
   Release and PrepareRelease set NuGetPush to True only when Conventional Commits include a version-bumping change. Otherwise NuGetPush is False.
-  Release and PrepareRelease generate PackageReleaseNotes from Conventional Commit headers since the latest reachable tag.
+  Release and PrepareRelease generate PackageReleaseNotes from Conventional Commit descriptions since the latest reachable tag and write each description as a separate CDATA bullet line.
   If the generated SemVer tag already exists, Release increments patch until it finds an available tag.
   If the latest tag is not SemVer, Release starts from the project version and scans commits after that tag.
   If no tag exists, Release starts from the project version and scans all commits.
@@ -465,8 +465,8 @@ function Get-PackageReleaseNotes {
 
     $headers = @()
     foreach ($info in @($CommitInfos)) {
-        if ($null -ne $info -and -not [string]::IsNullOrWhiteSpace($info.Header)) {
-            $headers += "- $($info.Header)"
+        if ($null -ne $info -and -not [string]::IsNullOrWhiteSpace($info.Description)) {
+            $headers += "- $($info.Description)"
         }
     }
 
@@ -841,6 +841,42 @@ function Get-OrCreate-Property {
     return $property
 }
 
+function Set-XmlElementText {
+    param(
+        [xml]$Document,
+        [System.Xml.XmlElement]$Element,
+        [string]$Value
+    )
+
+    $Element.RemoveAll()
+    $Element.InnerText = $Value
+}
+
+function Set-XmlElementCDataText {
+    param(
+        [xml]$Document,
+        [System.Xml.XmlElement]$Element,
+        [string]$Value
+    )
+
+    $Element.RemoveAll()
+
+    if ([string]::IsNullOrEmpty($Value)) {
+        return
+    }
+
+    $parts = $Value -split [regex]::Escape("]]>")
+    for ($index = 0; $index -lt $parts.Count; $index++) {
+        if ($parts[$index].Length -gt 0) {
+            $Element.AppendChild($Document.CreateCDataSection($parts[$index])) | Out-Null
+        }
+
+        if ($index -lt ($parts.Count - 1)) {
+            $Element.AppendChild($Document.CreateTextNode("]]>")) | Out-Null
+        }
+    }
+}
+
 function Get-BoolProperty {
     param(
         [System.Xml.XmlElement]$PropertyGroup,
@@ -1006,15 +1042,15 @@ function Update-ProjectVersion {
     }
 
     if (-not $PreviewOnly) {
-        $versionProperty.InnerText = $semVer
-        $numVerProperty.InnerText = $newCore
-        $buildNumberProperty.InnerText = $buildNumber
-        $nuGetPushProperty.InnerText = $nuGetPush.ToString()
-        $packageReleaseNotesProperty.InnerText = $packageReleaseNotes
-        $prereleaseNameProperty.InnerText = $effectivePrereleaseName
-        $buildNameProperty.InnerText = $effectiveBuildName
-        $isPrereleaseProperty.InnerText = $effectiveIsPrerelease.ToString()
-        $isBuildProperty.InnerText = $effectiveIsBuild.ToString()
+        Set-XmlElementText $project $versionProperty $semVer
+        Set-XmlElementText $project $numVerProperty $newCore
+        Set-XmlElementText $project $buildNumberProperty $buildNumber
+        Set-XmlElementText $project $nuGetPushProperty $nuGetPush.ToString()
+        Set-XmlElementCDataText $project $packageReleaseNotesProperty $packageReleaseNotes
+        Set-XmlElementText $project $prereleaseNameProperty $effectivePrereleaseName
+        Set-XmlElementText $project $buildNameProperty $effectiveBuildName
+        Set-XmlElementText $project $isPrereleaseProperty $effectiveIsPrerelease.ToString()
+        Set-XmlElementText $project $isBuildProperty $effectiveIsBuild.ToString()
 
         $project.Save((Resolve-Path $Path))
     }

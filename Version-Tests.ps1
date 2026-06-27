@@ -209,6 +209,20 @@ function Read-Project {
     return $project.Project.PropertyGroup
 }
 
+function Get-ProjectPropertyValue {
+    param(
+        [object]$Project,
+        [string]$Name
+    )
+
+    $value = $Project.$Name
+    if ($value -is [System.Xml.XmlElement]) {
+        return $value.InnerText
+    }
+
+    return $value
+}
+
 function Assert-Equal {
     param(
         [object]$Expected,
@@ -231,6 +245,17 @@ function Assert-Match {
     if ($Actual -notmatch $Pattern) {
         throw "$Message. Value: '$Actual'. Pattern: '$Pattern'."
     }
+}
+
+function Assert-FileMatch {
+    param(
+        [string]$Path,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    $content = Get-Content -Path $Path -Raw
+    Assert-Match $content $Pattern $Message
 }
 
 function Write-SectionTitle {
@@ -401,7 +426,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.18.0" $output "Script version output must match"
+    Assert-Equal "1.18.2" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -890,7 +915,8 @@ function Test-ReleaseCreatesCommitAndTag {
     Assert-Equal "7.3.1" $project.Version "Release must update Version"
     Assert-Equal "7.3.1" $project.NumVer "Release must update NumVer"
     Assert-Equal "True" $project.NuGetPush "Release must enable NuGetPush when conventional commits bump the version"
-    Assert-Match $project.PackageReleaseNotes "fix: prepare patch release" "Release must generate PackageReleaseNotes from conventional commits"
+    Assert-Match (Get-ProjectPropertyValue $project "PackageReleaseNotes") "- prepare patch release" "Release must generate PackageReleaseNotes from conventional commit descriptions"
+    Assert-FileMatch $path '<PackageReleaseNotes><!\[CDATA\[- prepare patch release\]\]></PackageReleaseNotes>' "Release must write PackageReleaseNotes as CDATA bullet lines"
     Assert-Equal "7.3.1" $tag "Release must create a matching tag"
     Assert-Equal "tag: 7.3.1" $subject "Release must create a conventional tag commit"
     Assert-Equal "7.3.1" $remoteTag "Release must push the matching tag to origin"
@@ -980,7 +1006,8 @@ function Test-PrepareReleaseUpdatesProjectWithoutCommitOrTag {
     Assert-Equal "7.3.1" $project.Version "PrepareRelease must update Version"
     Assert-Equal "7.3.1" $project.NumVer "PrepareRelease must update NumVer"
     Assert-Equal "True" $project.NuGetPush "PrepareRelease must enable NuGetPush when conventional commits bump the version"
-    Assert-Match $project.PackageReleaseNotes "fix: prepare patch release" "PrepareRelease must generate PackageReleaseNotes"
+    Assert-Match (Get-ProjectPropertyValue $project "PackageReleaseNotes") "- prepare patch release" "PrepareRelease must generate PackageReleaseNotes"
+    Assert-FileMatch $path '<PackageReleaseNotes><!\[CDATA\[- prepare patch release\]\]></PackageReleaseNotes>' "PrepareRelease must write PackageReleaseNotes as CDATA bullet lines"
     Assert-Equal $headBefore $headAfter "PrepareRelease must not create a commit"
     Assert-Equal "" ($tag -join "") "PrepareRelease must not create a tag"
     Assert-Match ($status -join "`n") "M MyProject\.csproj" "PrepareRelease must leave the project change ready for consumer documentation updates"
@@ -1032,7 +1059,7 @@ function Test-PublishReleaseCommitsPreparedProjectAndDocumentation {
     Assert-Equal "7.3.1" $publishedVersion "PublishRelease must return the published version"
     Assert-Equal "7.3.1" $project.Version "PublishRelease must keep the prepared Version"
     Assert-Equal "True" $project.NuGetPush "PublishRelease must keep the prepared NuGetPush value"
-    Assert-Match $project.PackageReleaseNotes "fix: prepare patch release" "PublishRelease must keep prepared PackageReleaseNotes"
+    Assert-Match (Get-ProjectPropertyValue $project "PackageReleaseNotes") "- prepare patch release" "PublishRelease must keep prepared PackageReleaseNotes"
     Assert-Equal "7.3.1" $tag "PublishRelease must create the prepared SemVer tag"
     Assert-Equal "7.3.1" $remoteTag "PublishRelease must push the prepared SemVer tag"
     Assert-Equal "tag: 7.3.1" $subject "PublishRelease must create the tag commit"
@@ -1173,7 +1200,8 @@ function Test-ReleaseBumpsPatchWhenCalculatedStableTagExists {
     Assert-Equal "1.2.4" $project.Version "Release must bump patch when the calculated stable tag already exists"
     Assert-Equal "1.2.4" $project.NumVer "Release must store the patch-bumped stable NumVer"
     Assert-Equal "False" $project.NuGetPush "Release must not enable NuGetPush when conventional commits do not bump the version"
-    Assert-Match $project.PackageReleaseNotes "docs: update examples" "Release notes must include non-bumping conventional commits"
+    Assert-Match (Get-ProjectPropertyValue $project "PackageReleaseNotes") "- update examples" "Release notes must include non-bumping conventional commit descriptions"
+    Assert-FileMatch $path '<PackageReleaseNotes><!\[CDATA\[- update examples\]\]></PackageReleaseNotes>' "Release notes for non-bumping commits must be written as CDATA bullet lines"
     Assert-Equal "1.2.3" $existingTag "Release must not move the existing stable tag"
     Assert-Equal "1.2.4" $tag "Release must create the next patch tag"
     Assert-Equal "1.2.4" $remoteTag "Release must push the next patch tag"

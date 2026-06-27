@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.18.0`.
+Current script version: `1.18.2`.
 
 ### Features
 
@@ -57,8 +57,8 @@ The script manages these properties in the target `.csproj`:
 <NumVer>7.3.1</NumVer>
 <BuildNumber>1777848010</BuildNumber>
 <NuGetPush>True</NuGetPush>
-<PackageReleaseNotes>- feat: add export flow
-- fix: correct package metadata</PackageReleaseNotes>
+<PackageReleaseNotes><![CDATA[- add export flow
+- correct package metadata]]></PackageReleaseNotes>
 <PrereleaseName>rc2.1</PrereleaseName>
 <BuildName>Build</BuildName>
 <IsPrerelease>True</IsPrerelease>
@@ -71,7 +71,7 @@ The script manages these properties in the target `.csproj`:
 | `NumVer` | Numeric version only: `Major.Minor.Patch`. |
 | `BuildNumber` | UTC epoch seconds generated on each version update. |
 | `NuGetPush` | `True` when release Conventional Commits contain a version-bumping change (`feat`, `fix`, `perf`, or breaking change); otherwise `False`. Pipelines can use it to decide whether to push a NuGet package. |
-| `PackageReleaseNotes` | Release notes generated from Conventional Commit headers since the latest reachable tag during `-Release` or `-PrepareRelease`. |
+| `PackageReleaseNotes` | Release notes generated from Conventional Commit descriptions since the latest reachable tag during `-Release` or `-PrepareRelease`. Each description is written as its own bullet line inside CDATA to preserve multiline text safely in XML. |
 | `PrereleaseName` | Prerelease identifier, for example `rc`, `rc2`, `rc2.1`. |
 | `BuildName` | Build metadata prefix, for example `Build`. |
 | `IsPrerelease` | Indicates whether prerelease should be used. |
@@ -236,8 +236,9 @@ project. `NuGetPush` is `True` only when the analyzed Conventional Commits
 contain a version-bumping change (`feat`, `fix`, `perf`, or breaking change).
 If the release only contains non-bumping commits such as `docs`, `test`, `chore`,
 or non-conventional messages, `NuGetPush` is `False`. `PackageReleaseNotes` is
-generated from the Conventional Commit headers found since the latest reachable
-tag so CI/CD can reuse the `.csproj` value.
+generated from the Conventional Commit descriptions found since the latest
+reachable tag. Each description is written as its own bullet line so CI/CD can
+reuse the `.csproj` value.
 
 `-Release` checks the stored project state before saving. If the project has no
 stored prerelease or build metadata state, the release is stable and keeps the

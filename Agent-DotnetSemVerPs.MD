@@ -2,7 +2,7 @@
 
 These instructions define the required release workflow for this repository.
 
-Expected `DotnetSemVerPs` script version: `1.18.0` or newer.
+Expected `DotnetSemVerPs` script version: `1.18.2` or newer.
 
 ## Project Path File
 
@@ -166,7 +166,7 @@ Always execute the release workflow in this order:
    - `NuGetPush`
    - `PackageReleaseNotes`
 
-   Use these values when updating consumer documentation, package metadata, or pipeline-facing files. `NuGetPush` tells CI/CD whether the release contains a version-bumping change that should publish the NuGet package. `PackageReleaseNotes` is generated from Conventional Commit headers since the latest reachable tag.
+   Use these values when updating consumer documentation, package metadata, or pipeline-facing files. `NuGetPush` tells CI/CD whether the release contains a version-bumping change that should publish the NuGet package. `PackageReleaseNotes` is generated from Conventional Commit descriptions since the latest reachable tag, with each description on its own bullet line inside CDATA.
 
 13. Update consumer repository files that depend on the new version or package release notes.
 

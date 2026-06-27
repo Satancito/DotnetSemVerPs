@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.18.2 - 2026-06-27
+
+### Fixed
+
+- Changed `PackageReleaseNotes` project serialization to write release notes as CDATA so multiline notes are preserved safely in `.csproj` XML.
+- Changed `PackageReleaseNotes` generation to write each Conventional Commit description as its own bullet line.
+
+### Tests
+
+- Added assertions that generated `PackageReleaseNotes` values are written as CDATA in release and prepare-release flows.
+
+### Documentation
+
+- Documented the CDATA format for `PackageReleaseNotes` in README and LEEME examples.
+
 ## 1.18.0 - 2026-06-27
 
 ### Added

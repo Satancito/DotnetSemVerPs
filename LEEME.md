@@ -4,7 +4,7 @@ Herramientas PowerShell para administrar versiones SemVer en archivos de proyect
 
 `DotnetSemVerPs` actualiza propiedades de version en archivos `.csproj`, soporta flujos estables, prerelease y metadata de build, genera build numbers como epoch UTC, e incluye un script de pruebas para validar escenarios de versionado.
 
-Version actual del script: `1.18.0`.
+Version actual del script: `1.18.2`.
 
 ### Funcionalidades
 
@@ -58,8 +58,8 @@ El script administra estas propiedades en el `.csproj` objetivo:
 <NumVer>7.3.1</NumVer>
 <BuildNumber>1777848010</BuildNumber>
 <NuGetPush>True</NuGetPush>
-<PackageReleaseNotes>- feat: add export flow
-- fix: correct package metadata</PackageReleaseNotes>
+<PackageReleaseNotes><![CDATA[- add export flow
+- correct package metadata]]></PackageReleaseNotes>
 <PrereleaseName>rc2.1</PrereleaseName>
 <BuildName>Build</BuildName>
 <IsPrerelease>True</IsPrerelease>
@@ -72,7 +72,7 @@ El script administra estas propiedades en el `.csproj` objetivo:
 | `NumVer` | Version numerica solamente: `Major.Minor.Patch`. |
 | `BuildNumber` | Epoch UTC generado en cada actualizacion de version. |
 | `NuGetPush` | `True` cuando los Conventional Commits de release contienen un cambio que incrementa version (`feat`, `fix`, `perf`, o breaking change); caso contrario `False`. Los pipelines pueden usarlo para decidir si hacen push del paquete NuGet. |
-| `PackageReleaseNotes` | Notas de release generadas desde los encabezados Conventional Commit desde el ultimo tag alcanzable durante `-Release` o `-PrepareRelease`. |
+| `PackageReleaseNotes` | Notas de release generadas desde las descripciones Conventional Commit desde el ultimo tag alcanzable durante `-Release` o `-PrepareRelease`. Cada descripcion se escribe como su propia linea con vineta dentro de CDATA para preservar texto multilinea de forma segura en XML. |
 | `PrereleaseName` | Identificador prerelease, por ejemplo `rc`, `rc2`, `rc2.1`. |
 | `BuildName` | Prefijo de metadata de build, por ejemplo `Build`. |
 | `IsPrerelease` | Indica si debe usarse prerelease. |
