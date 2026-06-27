@@ -6,7 +6,7 @@ $testGitHome = Join-Path $testRoot "GitHome"
 $testGitConfig = Join-Path $testGitHome ".gitconfig"
 $displayProjectPath = "/path/to/MyProject.csproj"
 $script:CompletedTests = 0
-$script:TotalTests = if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -eq "1") { 57 } else { 58 }
+$script:TotalTests = if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -eq "1") { 59 } else { 60 }
 
 function Reset-LastExitCode {
     $global:LASTEXITCODE = 0
@@ -397,7 +397,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.16.1" $output "Script version output must match"
+    Assert-Equal "1.17.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -939,6 +939,100 @@ function Test-ReleaseWorksFromProjectSubdirectory {
     Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "Release Subdirectory Tag: $tag"
     Write-Host "Pushed Subdirectory Tag: $remoteTag"
+    Write-TestSeparator
+}
+
+function Test-PrepareReleaseUpdatesProjectWithoutCommitOrTag {
+    $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0"
+    $path = $fixture.ProjectPath
+    $repositoryPath = $fixture.RepositoryPath
+    Add-TestGitCommit -RepositoryPath $repositoryPath -Message "fix: prepare patch release"
+
+    $headBefore = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD")
+
+    $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
+        $scriptOutput = & $scriptPath -ProjectPath $path -PrepareRelease
+        return @{
+            ExitCode = $LASTEXITCODE
+            Output = $scriptOutput
+        }
+    }
+
+    if ($null -ne $result.ExitCode -and $result.ExitCode -ne 0) {
+        throw "Version.ps1 -PrepareRelease failed with exit code $($result.ExitCode). $($result.Output -join ' ')"
+    }
+
+    $project = Read-Project $path
+    $headAfter = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD")
+    $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.3.1")
+    $status = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("status", "--porcelain")
+
+    $preparedVersion = $result.Output -join ""
+
+    Assert-Equal "7.3.1" $preparedVersion "PrepareRelease must return the calculated version"
+    Assert-Equal "7.3.1" $project.Version "PrepareRelease must update Version"
+    Assert-Equal "7.3.1" $project.NumVer "PrepareRelease must update NumVer"
+    Assert-Equal $headBefore $headAfter "PrepareRelease must not create a commit"
+    Assert-Equal "" ($tag -join "") "PrepareRelease must not create a tag"
+    Assert-Match ($status -join "`n") "M MyProject\.csproj" "PrepareRelease must leave the project change ready for consumer documentation updates"
+
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -PrepareRelease"
+    Write-Host "Prepared Version: $preparedVersion"
+    Write-TestSeparator
+}
+
+function Test-PublishReleaseCommitsPreparedProjectAndDocumentation {
+    $fixture = New-TestGitProject -Version "7.3.0" -NumVer "7.3.0"
+    $path = $fixture.ProjectPath
+    $repositoryPath = $fixture.RepositoryPath
+    $remotePath = $fixture.RemotePath
+    $branchName = $fixture.BranchName
+    Add-TestGitCommit -RepositoryPath $repositoryPath -Message "fix: prepare patch release"
+
+    Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
+        & $scriptPath -ProjectPath $path -PrepareRelease *> $null
+    }
+
+    $readmePath = Join-Path $repositoryPath "README.md"
+    Set-Content -Path $readmePath -Value "Current package version: 7.3.1" -Encoding UTF8
+
+    $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
+        $scriptOutput = & $scriptPath -ProjectPath $path -PublishRelease
+        return @{
+            ExitCode = $LASTEXITCODE
+            Output = $scriptOutput
+        }
+    }
+
+    if ($null -ne $result.ExitCode -and $result.ExitCode -ne 0) {
+        throw "Version.ps1 -PublishRelease failed with exit code $($result.ExitCode). $($result.Output -join ' ')"
+    }
+
+    $project = Read-Project $path
+    $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "7.3.1")
+    $remoteTag = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("tag", "--list", "7.3.1")
+    $subject = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("log", "-1", "--pretty=%s")
+    $remoteSubject = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("log", "-1", "--pretty=%s", "refs/heads/$branchName")
+    $changedFiles = @(Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"))
+    $status = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("status", "--porcelain")
+
+    $publishedVersion = $result.Output -join ""
+
+    Assert-Equal "7.3.1" $publishedVersion "PublishRelease must return the published version"
+    Assert-Equal "7.3.1" $project.Version "PublishRelease must keep the prepared Version"
+    Assert-Equal "7.3.1" $tag "PublishRelease must create the prepared SemVer tag"
+    Assert-Equal "7.3.1" $remoteTag "PublishRelease must push the prepared SemVer tag"
+    Assert-Equal "tag: 7.3.1" $subject "PublishRelease must create the tag commit"
+    Assert-Equal "tag: 7.3.1" $remoteSubject "PublishRelease must push the tag commit"
+    Assert-Equal "" ($status -join "") "PublishRelease must leave the working tree clean"
+    Assert-Match ($changedFiles -join "`n") "MyProject\.csproj" "PublishRelease commit must include the prepared project version"
+    Assert-Match ($changedFiles -join "`n") "README\.md" "PublishRelease commit must include consumer documentation updates"
+
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -PublishRelease"
+    Write-Host "Published Version: $publishedVersion"
     Write-TestSeparator
 }
 
@@ -1518,6 +1612,8 @@ try {
     Test-MissingVersionPatchBumpsFromDefaultInitialVersion
     Test-ReleaseCreatesCommitAndTag
     Test-ReleaseWorksFromProjectSubdirectory
+    Test-PrepareReleaseUpdatesProjectWithoutCommitOrTag
+    Test-PublishReleaseCommitsPreparedProjectAndDocumentation
     Test-ReleaseUsesConventionalCommitsSinceLatestSemVerTag
     Test-ReleaseIgnoresNonConventionalCommits
     Test-ReleaseBumpsPatchWhenCalculatedStableTagExists

@@ -17,7 +17,7 @@ Agent-DotnetSemVerPs.MD
    Example version:
 
    ```text
-   1.16.1
+   1.17.0
    ```
 
    Use semantic versioning to decide which part of the version must be increased:
@@ -29,9 +29,9 @@ Agent-DotnetSemVerPs.MD
    Examples:
 
    ```text
-   1.16.0 -> 1.16.1  Patch
-   1.16.0 -> 1.17.0  Minor
-   1.16.0 -> 2.0.0   Major
+   1.17.0 -> 1.17.1  Patch
+   1.17.0 -> 1.18.0  Minor
+   1.17.0 -> 2.0.0   Major
    ```
 
 2. Update the selected version everywhere it is represented.
@@ -154,7 +154,7 @@ Create a Git tag using only the SemVer release version.
 Example:
 
 ```powershell
-git tag 1.16.1
+git tag 1.17.0
 ```
 
 Do not prefix the tag with `v`.
@@ -170,7 +170,7 @@ git push origin main
 Push the release tag:
 
 ```powershell
-git push origin 1.16.1
+git push origin 1.17.0
 ```
 
 ## Final Check
@@ -190,5 +190,5 @@ git tag --points-at HEAD
 Confirm the tag exists on the remote:
 
 ```powershell
-git ls-remote --tags origin 1.16.1
+git ls-remote --tags origin 1.17.0
 ```

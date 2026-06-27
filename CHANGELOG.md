@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.17.0 - 2026-06-27
+
+### Added
+
+- Added `-PrepareRelease` to calculate the release version, save it to the project file, and return the calculated SemVer without committing, tagging, or pushing.
+- Added `-PublishRelease` to publish a prepared project version by committing all current repository changes, creating the SemVer tag, and pushing the branch and tag.
+
+### Tests
+
+- Added two-phase release tests for preparing without commit/tag and publishing the prepared project plus consumer documentation in one release commit.
+
+### Documentation
+
+- Documented the two-phase consumer release flow in README, LEEME, usage text, and agent instructions.
+
 ## 1.16.1 - 2026-06-27
 
 ### Documentation

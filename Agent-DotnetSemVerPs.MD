@@ -2,7 +2,7 @@
 
 These instructions define the required release workflow for this repository.
 
-Expected `DotnetSemVerPs` script version: `1.16.1` or newer.
+Expected `DotnetSemVerPs` script version: `1.17.0` or newer.
 
 ## Project Path File
 
@@ -26,8 +26,9 @@ Create a safe release by:
 
 - validating the current code before versioning
 - committing the actual change with Conventional Commits
-- letting `Tools/DotnetSemVerPs/Version.ps1` calculate the SemVer release
-- letting the script create and push the release commit and Git tag
+- letting `Tools/DotnetSemVerPs/Version.ps1` calculate and store the SemVer release
+- updating consumer documentation or metadata with the prepared version
+- letting the script publish the release commit and Git tag
 
 The agent must not calculate the next version manually.
 
@@ -117,7 +118,7 @@ Always execute the release workflow in this order:
 
    Repeat steps 7 through 9 as needed until every intended change has been committed.
 
-10. Confirm the Git working tree is completely clean before releasing.
+10. Confirm the Git working tree is completely clean before preparing the release.
 
    ```powershell
    git status --short
@@ -125,17 +126,48 @@ Always execute the release workflow in this order:
 
    Do not continue if there are untracked files, unstaged changes, or staged changes waiting to be committed.
 
-11. Run `Version.ps1 -Release` against `$ProjectPath`.
+11. Run `Version.ps1 -PrepareRelease` against `$ProjectPath` and capture the calculated version.
 
    ```powershell
-   ./Tools/DotnetSemVerPs/Version.ps1 -ProjectPath $ProjectPath -Release
+   $ReleaseVersion = & ./Tools/DotnetSemVerPs/Version.ps1 -ProjectPath $ProjectPath -PrepareRelease
    ```
 
-   Do not pass `-Type` with `-Release`.
+   Do not pass `-Type` with `-PrepareRelease`.
+
+12. Update consumer repository files that depend on the new version.
+
+   Use `$ReleaseVersion` to update any relevant files in the consumer repository, such as:
+
+   - `README.md`
+   - `LEEME.md`
+   - `CHANGELOG.md`
+   - package documentation
+   - NuGet package metadata
+   - deployment manifests
+   - examples that show the current package or project version
+
+   Only update files that actually depend on the version or release notes. Do not invent unrelated documentation changes.
+
+13. Inspect the prepared release changes.
+
+   ```powershell
+   git status --short
+   git diff
+   ```
+
+   The changes should include the prepared `.csproj` version update and any consumer documentation or metadata updates that use `$ReleaseVersion`.
+
+14. Run `Version.ps1 -PublishRelease` against `$ProjectPath`.
+
+   ```powershell
+   ./Tools/DotnetSemVerPs/Version.ps1 -ProjectPath $ProjectPath -PublishRelease
+   ```
+
+   Do not pass `-Type` with `-PublishRelease`. `-PublishRelease` must not calculate a new version; it publishes the `Version` already stored in the project.
 
 ## Conventional Commits
 
-Conventional Commits is the commit message format used by the release script to decide the next SemVer version. The agent must write the normal commit in this format before running `Version.ps1 -Release`.
+Conventional Commits is the commit message format used by the release script to decide the next SemVer version. The agent must write the normal commit in this format before running `Version.ps1 -PrepareRelease`.
 
 Required format:
 
@@ -213,16 +245,18 @@ Breaking change examples:
 
 - Do not release before build succeeds.
 - Do not release before tests pass, when tests exist.
-- Do not run `Version.ps1 -Release` with untracked, unstaged, or staged files.
+- Do not run `Version.ps1 -PrepareRelease` with untracked, unstaged, or staged files.
 - Do not create the release commit manually.
 - Do not create the Git tag manually.
-- Do not push manually after `Version.ps1 -Release`; the script pushes the branch and generated tag.
+- Do not commit manually between `Version.ps1 -PrepareRelease` and `Version.ps1 -PublishRelease`; update version-dependent consumer files, inspect them, and let `-PublishRelease` commit the prepared release.
+- Do not push manually after `Version.ps1 -PublishRelease`; the script pushes the branch and generated tag.
 - Do not commit unrelated local changes.
 - Prefer staging explicit file paths.
 - Do not use `git add -A` unless every current change was inspected and belongs to the commit.
 - Do not use prerelease or build metadata unless the user explicitly asks for it.
 - Do not promote to stable unless the user explicitly asks for it.
-- When the project already stores `PrereleaseName` or `BuildName`, `Version.ps1 -Release` publishes a non-stable SemVer tag using those project values.
+- Do not pass `-Type` to `Version.ps1 -Release`, `Version.ps1 -PrepareRelease`, or `Version.ps1 -PublishRelease`.
+- When the project already stores `PrereleaseName` or `BuildName`, the release flow publishes a non-stable SemVer tag using those project values.
 - Existing release tags are never moved. If the generated stable or non-stable tag already exists, the script increments patch until it finds an available tag and updates the `.csproj` with that final SemVer value.
 - If no test projects exist, state that tests were not available and continue only after build succeeds.
 
@@ -230,7 +264,7 @@ Breaking change examples:
 
 Only use non-release versioning when the user explicitly asks for prerelease, build metadata, stable promotion, or local version preview.
 
-Those commands are not part of the normal release flow and must not be mixed with `-Release`.
+Those commands are not part of the normal release flow and must not be mixed with `-Release`, `-PrepareRelease`, or `-PublishRelease`.
 
 For exact parameter usage, read:
 

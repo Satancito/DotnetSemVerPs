@@ -2,6 +2,8 @@
 param(
     [Parameter(Mandatory = $true, ParameterSetName = "Update")]
     [Parameter(Mandatory = $true, ParameterSetName = "Release")]
+    [Parameter(Mandatory = $true, ParameterSetName = "PrepareRelease")]
+    [Parameter(Mandatory = $true, ParameterSetName = "PublishRelease")]
     [Parameter(Mandatory = $true, ParameterSetName = "Stable")]
     [Parameter(Mandatory = $true, ParameterSetName = "ProjectVersion")]
     [Parameter(Mandatory = $true, ParameterSetName = "ProjectBuildNumber")]
@@ -35,6 +37,12 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = "Release")]
     [switch]$Release,
 
+    [Parameter(Mandatory = $true, ParameterSetName = "PrepareRelease")]
+    [switch]$PrepareRelease,
+
+    [Parameter(Mandatory = $true, ParameterSetName = "PublishRelease")]
+    [switch]$PublishRelease,
+
     [Parameter(Mandatory = $true, ParameterSetName = "Usage")]
     [switch]$Usage,
 
@@ -61,7 +69,7 @@ param(
     [string]$SemVer
 )
 
-$ScriptVersion = "1.16.1"
+$ScriptVersion = "1.17.0"
 $DefaultInitialVersionCore = "0.1.0"
 $SemVerPattern = '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
 
@@ -76,6 +84,8 @@ Usage:
   ./Version.ps1 -ProjectPath <path.csproj> -Type <Major|Minor|Patch> [options]
   ./Version.ps1 -ProjectPath <path.csproj> -Stable
   ./Version.ps1 -ProjectPath <path.csproj> -Release
+  ./Version.ps1 -ProjectPath <path.csproj> -PrepareRelease
+  ./Version.ps1 -ProjectPath <path.csproj> -PublishRelease
   ./Version.ps1 -ProjectPath <path.csproj> -Version
   ./Version.ps1 -ProjectPath <path.csproj> -BuildNumber
   ./Version.ps1 -Validate -SemVer <semver> [-Detailed]
@@ -106,6 +116,8 @@ Options:
   -IsNotBuild                Disables build. Takes precedence over -IsBuild.
   -Stable                    Promotes to stable when used alone, or clears prerelease/build after Major, Minor, or Patch.
   -Release                   Requires a clean Git working tree, calculates release version from Conventional Commits, commits only the updated project file, creates a Git tag, and pushes both. Must be used without -Type. Uses stored prerelease/build state to publish non-stable SemVer tags when present.
+  -PrepareRelease            Requires a clean Git working tree, calculates the release version from Conventional Commits, saves it to the project file, and returns the version without commit, tag, or push.
+  -PublishRelease            Reads the prepared project Version, validates the tag, commits all current repository changes with tag: <version>, creates the Git tag, and pushes branch and tag.
   -WhatIf                    Shows the generated result without saving the project file.
   -Usage                     Shows this help. Must be used alone.
   -Version                   Shows the script version when used alone, or the project Version with -ProjectPath. Creates 0.1.0 when missing.
@@ -124,6 +136,8 @@ Rules:
   -Tests must be used alone.
   -Stable can be used with only ProjectPath to promote without incrementing NumVer, or with Type Major, Minor, or Patch to promote after incrementing.
   -Release must be used with only ProjectPath. It calculates the version from Conventional Commits; do not pass -Type.
+  -PrepareRelease must be used with only ProjectPath. It calculates and saves the version but does not commit, tag, or push.
+  -PublishRelease must be used with only ProjectPath. It does not calculate a new version; it publishes the Version already stored in the project.
   Version stores the final SemVer value.
   NumVer stores only Major.Minor.Patch.
   Missing Version and NumVer values start from 0.1.0.
@@ -143,6 +157,8 @@ Rules:
   Release publishes stable tags when the project has no stored prerelease/build state. When stored PrereleaseName or BuildName values exist, Release publishes a non-stable SemVer tag from those project values.
   Existing Release tags are never moved. When the generated tag already exists, Release increments patch and updates the project with the available SemVer value.
   Release stages and commits only the project version change with tag: <version>, creates the SemVer tag, then pushes the branch and tag to origin.
+  PrepareRelease is the first phase for consumer repositories that must update README, changelog, package metadata, or other files with the calculated version before publishing.
+  PublishRelease is the second phase for consumer repositories. It commits all current repository changes, creates the SemVer tag from the prepared project Version, then pushes the branch and tag to origin.
   WhatIf calculates and prints the result without writing changes to the project file.
   If -IsPrerelease is used, -PrereleaseName is required.
   If -IsBuild is used, -BuildName is required.
@@ -155,6 +171,8 @@ Examples:
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -IsPrerelease -PrereleaseName rc2.1 -IsBuild -BuildName Build
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Stable
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Release
+  `$releaseVersion = & ./Version.ps1 -ProjectPath ./MyProject.csproj -PrepareRelease
+  ./Version.ps1 -ProjectPath ./MyProject.csproj -PublishRelease
   ./Version.ps1 -ProjectPath ./MyProject.csproj -Type Patch -WhatIf
   `$validated = & ./Version.ps1 -Validate -SemVer 1.2.3-rc.1+Build.5
   `$validated = & ./Version.ps1 -Validate -SemVer 1.2.3-rc.1+Build.5 -Detailed
@@ -551,6 +569,40 @@ function Complete-GitRelease {
     Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("push", "origin", $Version) | Out-Null
 }
 
+function Complete-GitPreparedRelease {
+    param(
+        [string]$RepositoryPath,
+        [string]$Version
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Version)) {
+        throw "PublishRelease requires the project Version to be prepared first."
+    }
+
+    $versionError = Get-SemVerValidationError $Version
+    if (-not [string]::IsNullOrWhiteSpace($versionError)) {
+        throw "PublishRelease requires a valid prepared SemVer project Version. $versionError"
+    }
+
+    Assert-GitTagAvailable -RepositoryPath $RepositoryPath -TagName $Version
+
+    $branchResult = Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("rev-parse", "--abbrev-ref", "HEAD")
+    $branchName = @($branchResult.Output)[0].ToString().Trim()
+    if ([string]::IsNullOrWhiteSpace($branchName) -or $branchName -eq "HEAD") {
+        throw "PublishRelease requires the repository to be on a named Git branch before it can push."
+    }
+
+    $status = Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("status", "--porcelain")
+    if (@($status.Output).Count -gt 0) {
+        Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("add", "-A") | Out-Null
+        Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("commit", "-m", "tag: $Version") | Out-Null
+    }
+
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("tag", $Version) | Out-Null
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("push", "origin", $branchName) | Out-Null
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("push", "origin", $Version) | Out-Null
+}
+
 function Get-AvailableReleaseVersionCore {
     param(
         [string]$RepositoryPath,
@@ -575,6 +627,23 @@ function Get-AvailableReleaseVersionCore {
     throw "Release could not find an available SemVer tag after 100 patch increments."
 }
 
+function Invoke-PrepareRelease {
+    param(
+        [string]$RepositoryPath,
+        [string]$ProjectPath,
+        [bool]$PreviewOnly = $false
+    )
+
+    $releaseBuildNumber = New-BuildNumber
+    Assert-GitWorkingTreeClean -RepositoryPath $RepositoryPath
+    $releasePlan = Get-ReleaseVersionPlan -RepositoryPath $RepositoryPath -ProjectPath $ProjectPath
+    $versionCoreOverride = Get-AvailableReleaseVersionCore -RepositoryPath $RepositoryPath -ProjectPath $ProjectPath -VersionCore $releasePlan.VersionCore -BuildNumber $releaseBuildNumber
+    $preview = Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
+    Assert-GitTagAvailable -RepositoryPath $RepositoryPath -TagName $preview.Next.Version
+
+    return Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $PreviewOnly -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
+}
+
 
 function Test-Parameters {
     if ($Usage -or $Tests -or $Validate -or $Version -or $BuildNumber) {
@@ -585,7 +654,7 @@ function Test-Parameters {
         throw "ProjectPath is required. Use -Usage to show help."
     }
 
-    if ($Release) {
+    if ($Release -or $PrepareRelease -or $PublishRelease) {
         return
     }
 
@@ -966,17 +1035,39 @@ try {
         return
     }
 
-    if ($Release -and -not $WhatIfPreference) {
-        $releaseBuildNumber = New-BuildNumber
+    if ($PrepareRelease) {
         $repositoryRoot = Get-GitRepositoryRoot -Path $ProjectPath
-        Assert-GitWorkingTreeClean -RepositoryPath $repositoryRoot
-        $releasePlan = Get-ReleaseVersionPlan -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath
-        $versionCoreOverride = Get-AvailableReleaseVersionCore -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -VersionCore $releasePlan.VersionCore -BuildNumber $releaseBuildNumber
-        $preview = Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
-        Assert-GitTagAvailable -RepositoryPath $repositoryRoot -TagName $preview.Next.Version
+        $result = Invoke-PrepareRelease -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -PreviewOnly $WhatIfPreference
+        $global:LASTEXITCODE = 0
+        Write-Output $result.Next.Version
+        return
+    }
 
-        $result = Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $false -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
-        Complete-GitRelease -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -Version $result.Next.Version
+    if ($PublishRelease) {
+        $repositoryRoot = Get-GitRepositoryRoot -Path $ProjectPath
+        $preparedVersion = Get-ProjectVersion -Path $ProjectPath
+        if (-not $WhatIfPreference) {
+            Complete-GitPreparedRelease -RepositoryPath $repositoryRoot -Version $preparedVersion
+        } else {
+            $versionError = Get-SemVerValidationError $preparedVersion
+            if (-not [string]::IsNullOrWhiteSpace($versionError)) {
+                throw "PublishRelease requires a valid prepared SemVer project Version. $versionError"
+            }
+
+            Assert-GitTagAvailable -RepositoryPath $repositoryRoot -TagName $preparedVersion
+        }
+
+        $global:LASTEXITCODE = 0
+        Write-Output $preparedVersion
+        return
+    }
+
+    if ($Release) {
+        $repositoryRoot = Get-GitRepositoryRoot -Path $ProjectPath
+        $result = Invoke-PrepareRelease -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -PreviewOnly $WhatIfPreference
+        if (-not $WhatIfPreference) {
+            Complete-GitRelease -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -Version $result.Next.Version
+        }
     } else {
         $bumpType = if ($Stable -and [string]::IsNullOrWhiteSpace($Type)) { "Stable" } else { $Type }
         $result = Update-ProjectVersion -Path $ProjectPath -BumpType $bumpType -PreviewOnly $WhatIfPreference

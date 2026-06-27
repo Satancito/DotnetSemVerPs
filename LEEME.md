@@ -4,7 +4,7 @@ Herramientas PowerShell para administrar versiones SemVer en archivos de proyect
 
 `DotnetSemVerPs` actualiza propiedades de version en archivos `.csproj`, soporta flujos estables, prerelease y metadata de build, genera build numbers como epoch UTC, e incluye un script de pruebas para validar escenarios de versionado.
 
-Version actual del script: `1.16.1`.
+Version actual del script: `1.17.0`.
 
 ### Funcionalidades
 
@@ -15,6 +15,7 @@ Version actual del script: `1.16.1`.
 - Genera `BuildNumber` como epoch UTC en cada actualizacion de version.
 - Crea automaticamente las propiedades de version faltantes.
 - Puede crear y subir commits de release y tags SemVer con `-Release`.
+- Puede dividir releases de proyectos consumidores con `-PrepareRelease` y `-PublishRelease` para actualizar documentacion con la version calculada antes de publicar.
 - Puede validar un string SemVer externo con `-Validate -SemVer <semver>`.
 - Puede ejecutar el script local de pruebas con `-Tests`.
 - Incluye un script de pruebas con escenarios comunes de versionado.
@@ -43,7 +44,9 @@ Luego el agente debe seguir el flujo ordenado en `Agent-DotnetSemVerPs.MD`: aseg
 actualizar el submodulo `Tools/DotnetSemVerPs`, copiar el ultimo
 `Tools/DotnetSemVerPs/Agent-DotnetSemVerPs.MD` a la raiz del repositorio, leer el path
 del proyecto desde `ProjectPath.txt`, validar/compilar/probar el proyecto, crear
-commits con Conventional Commits y finalmente ejecutar `Version.ps1 -Release`.
+commits con Conventional Commits, ejecutar `Version.ps1 -PrepareRelease`,
+actualizar archivos del consumidor que dependan de la version calculada, y
+finalmente ejecutar `Version.ps1 -PublishRelease`.
 
 ### Propiedades De Version
 
@@ -169,14 +172,29 @@ Sintaxis de versionado:
 
 `-ProjectPath` y `-Type` son requeridos para el parameter set de versionado.
 
-Crear un commit local de release y tag:
+Crear y publicar un release en un solo paso:
 
 ```powershell
 ./Version.ps1 -ProjectPath ./MyProject.csproj -Release
 ```
 
-`-Release` tiene su propio parameter set y debe usarse sin `-Type`; la version
-de release se calcula desde Conventional Commits. Primero localiza el repositorio Git que contiene el `.csproj` buscando
+Usa el flujo de release en dos fases cuando el repositorio consumidor debe
+actualizar documentacion, changelog, metadata de paquete, manifiestos de
+despliegue, o cualquier otro archivo con la version calculada antes de publicar:
+
+```powershell
+$releaseVersion = & ./Version.ps1 -ProjectPath ./MyProject.csproj -PrepareRelease
+# actualizar README.md, CHANGELOG.md, documentacion del paquete, u otros archivos con $releaseVersion
+./Version.ps1 -ProjectPath ./MyProject.csproj -PublishRelease
+```
+
+`-Release`, `-PrepareRelease` y `-PublishRelease` tienen sus propios parameter
+sets y deben usarse sin `-Type`. La version de release se calcula desde
+Conventional Commits durante `-Release` o `-PrepareRelease`. `-PublishRelease`
+no calcula una nueva version; lee el `Version` preparado que ya esta guardado en
+el proyecto.
+
+El flujo de release primero localiza el repositorio Git que contiene el `.csproj` buscando
 hacia arriba desde la carpeta del archivo de proyecto. El proyecto puede estar
 anidado cualquier cantidad de carpetas dentro del repositorio; solo necesita
 estar dentro de un repo Git valido. Luego el script requiere un working tree de
@@ -197,10 +215,18 @@ actual del proyecto y analiza los commits posteriores a ese tag. Si no existe
 ningun tag, el script inicia desde la version actual del proyecto y analiza todos
 los commits.
 
-Si el release es valido, el script actualiza el `.csproj`, agrega al stage solo
-ese archivo de proyecto, hace commit solo de ese archivo con `tag: <version>`,
-crea un tag con el nombre exacto del valor SemVer generado, y luego sube
-el branch actual y ese tag a `origin`.
+Si el release de un solo paso es valido, `-Release` actualiza el `.csproj`,
+agrega al stage solo ese archivo de proyecto, hace commit solo de ese archivo
+con `tag: <version>`, crea un tag con el nombre exacto del valor SemVer generado,
+y luego sube el branch actual y ese tag a `origin`.
+
+Si se usa el release en dos fases, `-PrepareRelease` actualiza el `.csproj` y
+retorna la version calculada sin commit, tag ni push. Despues de que el
+repositorio consumidor actualice documentacion u otros archivos que dependen de
+la version, `-PublishRelease` lee el `Version` preparado del proyecto, agrega al
+stage todos los cambios actuales del repositorio con `git add -A`, los commitea
+con `tag: <version>`, crea el tag SemVer y luego sube el branch actual y el tag a
+`origin`.
 
 `-Release` revisa el estado guardado del proyecto antes de guardar. Si el
 proyecto no tiene prerelease ni metadata de build guardados, el release es
@@ -488,10 +514,11 @@ After NumVer: 7.3.1
 - `Type` acepta solamente `Major`, `Minor` o `Patch`.
 - `-Stable` solo promueve sin incrementar `NumVer`.
 - `-Type <Major|Minor|Patch> -Stable` incrementa y luego limpia prerelease/build.
-- `-Release` requiere que la carpeta del `.csproj`, o alguna carpeta padre, sea un repositorio Git valido.
-- `-Release` debe usarse sin `-Type`; las versiones de release se calculan desde Conventional Commits.
-- `-Release` requiere un working tree de Git completamente limpio antes de iniciar.
-- `-Release` falla cuando existen archivos untracked, cambios unstaged, o cambios staged.
+- `-Release`, `-PrepareRelease` y `-PublishRelease` requieren que la carpeta del `.csproj`, o alguna carpeta padre, sea un repositorio Git valido.
+- `-Release` y `-PrepareRelease` deben usarse sin `-Type`; las versiones de release se calculan desde Conventional Commits.
+- `-PublishRelease` debe usarse sin `-Type`; publica el `Version` ya guardado en el proyecto y no lo recalcula.
+- `-Release` y `-PrepareRelease` requieren un working tree de Git completamente limpio antes de iniciar.
+- `-Release` y `-PrepareRelease` fallan cuando existen archivos untracked, cambios unstaged, o cambios staged.
 - `-Release` calcula la version de release desde Conventional Commits cronologicos desde el ultimo tag SemVer cuando existe.
 - `-Release` inicia desde la version del proyecto y analiza commits despues del ultimo tag cuando ese tag no es SemVer.
 - `-Release` inicia desde la version del proyecto y analiza todos los commits cuando no existe ningun tag.
@@ -499,6 +526,8 @@ After NumVer: 7.3.1
 - `-Release` publica un tag no estable cuando el proyecto guarda `PrereleaseName` o `BuildName`.
 - `-Release` nunca mueve tags existentes.
 - `-Release` agrega al stage y commitea solo el cambio de version del proyecto con `tag: <version>`, crea el tag SemVer, y luego sube el branch actual y el tag a `origin`.
+- `-PrepareRelease` guarda la version calculada en el proyecto y la retorna para que la documentacion del consumidor pueda actualizarse antes de publicar.
+- `-PublishRelease` commitea todos los cambios actuales del repositorio, crea el tag SemVer preparado y luego sube el branch actual y el tag a `origin`.
 - `-IsPrerelease` requiere un `-PrereleaseName` no vacio.
 - `-IsBuild` requiere un `-BuildName` no vacio.
 - `-IsNotPrerelease` sobreescribe `-IsPrerelease` y limpia `PrereleaseName` guardado.
