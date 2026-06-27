@@ -6,7 +6,7 @@ $testGitHome = Join-Path $testRoot "GitHome"
 $testGitConfig = Join-Path $testGitHome ".gitconfig"
 $displayProjectPath = "/path/to/MyProject.csproj"
 $script:CompletedTests = 0
-$script:TotalTests = if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -eq "1") { 55 } else { 56 }
+$script:TotalTests = if ($env:VERSION_TESTS_SKIP_TESTS_PARAMETER -eq "1") { 57 } else { 58 }
 
 function Reset-LastExitCode {
     $global:LASTEXITCODE = 0
@@ -126,7 +126,11 @@ function New-TestGitProject {
     param(
         [string]$Version = "7.3.0",
         [string]$NumVer = "7.3.0",
-        [string]$ProjectRelativeDirectory = ""
+        [string]$ProjectRelativeDirectory = "",
+        [string]$PrereleaseName = "",
+        [string]$BuildName = "",
+        [bool]$IsPrerelease = $false,
+        [bool]$IsBuild = $false
     )
 
     New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
@@ -147,10 +151,10 @@ function New-TestGitProject {
     <Version>$Version</Version>
     <NumVer>$NumVer</NumVer>
     <BuildNumber></BuildNumber>
-    <PrereleaseName></PrereleaseName>
-    <BuildName></BuildName>
-    <IsPrerelease>False</IsPrerelease>
-    <IsBuild>False</IsBuild>
+    <PrereleaseName>$PrereleaseName</PrereleaseName>
+    <BuildName>$BuildName</BuildName>
+    <IsPrerelease>$IsPrerelease</IsPrerelease>
+    <IsBuild>$IsBuild</IsBuild>
   </PropertyGroup>
 </Project>
 "@
@@ -393,7 +397,7 @@ function Invoke-ScriptVersion {
         throw "Version.ps1 -Version failed with exit code $LASTEXITCODE."
     }
 
-    Assert-Equal "1.15.3" $output "Script version output must match"
+    Assert-Equal "1.16.0" $output "Script version output must match"
 
     Write-Host "./Version.ps1 -Version"
     Write-Host "Script Version: $output"
@@ -1032,7 +1036,7 @@ function Test-ReleaseIgnoresNonConventionalCommits {
     Write-TestSeparator
 }
 
-function Test-ReleaseMovesExistingTagWhenNoConventionalBumpExists {
+function Test-ReleaseBumpsPatchWhenCalculatedStableTagExists {
     $fixture = New-TestGitProject -Version "1.2.3" -NumVer "1.2.3"
     $path = $fixture.ProjectPath
     $repositoryPath = $fixture.RepositoryPath
@@ -1053,22 +1057,24 @@ function Test-ReleaseMovesExistingTagWhenNoConventionalBumpExists {
     }
 
     if ($null -ne $result.ExitCode -and $result.ExitCode -ne 0) {
-        throw "Version.ps1 -Release existing tag move failed with exit code $($result.ExitCode)."
+        throw "Version.ps1 -Release existing stable tag patch bump failed with exit code $($result.ExitCode)."
     }
 
     $project = Read-Project $path
-    $head = @(Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "HEAD"))[0].ToString().Trim()
-    $tagCommit = @(Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("rev-parse", "1.2.3"))[0].ToString().Trim()
-    $remoteTagCommit = @(Invoke-TestGit -RepositoryPath $remotePath -Arguments @("rev-parse", "1.2.3"))[0].ToString().Trim()
-    $remoteBranchCommit = @(Invoke-TestGit -RepositoryPath $remotePath -Arguments @("rev-parse", "refs/heads/$branchName"))[0].ToString().Trim()
+    $existingTag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "1.2.3")
+    $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "1.2.4")
+    $remoteTag = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("tag", "--list", "1.2.4")
+    $remoteSubject = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("log", "-1", "--pretty=%s", "refs/heads/$branchName")
 
-    Assert-Equal "1.2.3" $project.Version "Release must keep the latest SemVer tag when no conventional bump exists"
-    Assert-Equal "1.2.3" $project.NumVer "Release must keep NumVer when no conventional bump exists"
-    Assert-Equal $head $tagCommit "Release must move the existing local tag to the release commit"
-    Assert-Equal $remoteBranchCommit $remoteTagCommit "Release must move the remote tag to the pushed release commit"
+    Assert-Equal "1.2.4" $project.Version "Release must bump patch when the calculated stable tag already exists"
+    Assert-Equal "1.2.4" $project.NumVer "Release must store the patch-bumped stable NumVer"
+    Assert-Equal "1.2.3" $existingTag "Release must not move the existing stable tag"
+    Assert-Equal "1.2.4" $tag "Release must create the next patch tag"
+    Assert-Equal "1.2.4" $remoteTag "Release must push the next patch tag"
+    Assert-Equal "tag: 1.2.4" $remoteSubject "Release must push the patch-bumped release commit"
 
     Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
-    Write-Host "Moved Release Tag: 1.2.3"
+    Write-Host "Patch-Bumped Release Tag: $tag"
     Write-TestSeparator
 }
 
@@ -1135,6 +1141,91 @@ function Test-ReleaseUsesProjectVersionAndAllCommitsWhenNoTagsExist {
 
     Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
     Write-Host "No-Tag Conventional Release: $tag"
+    Write-TestSeparator
+}
+
+function Test-ReleaseCreatesPrereleaseTagFromProjectState {
+    $fixture = New-TestGitProject -Version "0.1.0-rc" -NumVer "0.1.0" -PrereleaseName "rc" -IsPrerelease $true
+    $path = $fixture.ProjectPath
+    $repositoryPath = $fixture.RepositoryPath
+    $remotePath = $fixture.RemotePath
+    $branchName = $fixture.BranchName
+
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "0.1.0") | Out-Null
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("push", "origin", "0.1.0") | Out-Null
+    Add-TestGitCommit -RepositoryPath $repositoryPath -Message "feat: prepare prerelease"
+
+    $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
+        $scriptOutput = & $scriptPath -ProjectPath $path -Release *>&1
+        return @{
+            ExitCode = $LASTEXITCODE
+            Output = $scriptOutput
+        }
+    }
+
+    if ($null -ne $result.ExitCode -and $result.ExitCode -ne 0) {
+        throw "Version.ps1 -Release prerelease failed with exit code $($result.ExitCode)."
+    }
+
+    $project = Read-Project $path
+    $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "0.2.0-rc")
+    $remoteTag = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("tag", "--list", "0.2.0-rc")
+    $remoteSubject = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("log", "-1", "--pretty=%s", "refs/heads/$branchName")
+
+    Assert-Equal "0.2.0-rc" $project.Version "Prerelease release must use stored PrereleaseName"
+    Assert-Equal "0.2.0" $project.NumVer "Prerelease release must store the calculated NumVer"
+    Assert-Equal "True" $project.IsPrerelease "Prerelease release must keep IsPrerelease true"
+    Assert-Equal "rc" $project.PrereleaseName "Prerelease release must keep stored PrereleaseName"
+    Assert-Equal "0.2.0-rc" $tag "Prerelease release must create the prerelease tag"
+    Assert-Equal "0.2.0-rc" $remoteTag "Prerelease release must push the prerelease tag"
+    Assert-Equal "tag: 0.2.0-rc" $remoteSubject "Prerelease release must push the prerelease commit"
+
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
+    Write-Host "Prerelease Tag: $tag"
+    Write-TestSeparator
+}
+
+function Test-ReleaseBumpsPatchWhenCalculatedPrereleaseTagExists {
+    $fixture = New-TestGitProject -Version "1.2.3-rc" -NumVer "1.2.3" -PrereleaseName "rc" -IsPrerelease $true
+    $path = $fixture.ProjectPath
+    $repositoryPath = $fixture.RepositoryPath
+    $remotePath = $fixture.RemotePath
+    $branchName = $fixture.BranchName
+
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "1.2.3-rc") | Out-Null
+    Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("push", "origin", "1.2.3-rc") | Out-Null
+    Add-TestGitCommit -RepositoryPath $repositoryPath -Message "docs: prepare prerelease notes"
+
+    $result = Invoke-WithIsolatedGitEnvironment {
+        Reset-LastExitCode
+        $scriptOutput = & $scriptPath -ProjectPath $path -Release *>&1
+        return @{
+            ExitCode = $LASTEXITCODE
+            Output = $scriptOutput
+        }
+    }
+
+    if ($null -ne $result.ExitCode -and $result.ExitCode -ne 0) {
+        throw "Version.ps1 -Release existing prerelease tag patch bump failed with exit code $($result.ExitCode)."
+    }
+
+    $project = Read-Project $path
+    $existingTag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "1.2.3-rc")
+    $tag = Invoke-TestGit -RepositoryPath $repositoryPath -Arguments @("tag", "--list", "1.2.4-rc")
+    $remoteTag = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("tag", "--list", "1.2.4-rc")
+    $remoteSubject = Invoke-TestGit -RepositoryPath $remotePath -Arguments @("log", "-1", "--pretty=%s", "refs/heads/$branchName")
+
+    Assert-Equal "1.2.4-rc" $project.Version "Release must bump patch when the calculated prerelease tag already exists"
+    Assert-Equal "1.2.4" $project.NumVer "Release must store the patch-bumped prerelease NumVer"
+    Assert-Equal "rc" $project.PrereleaseName "Release must keep the explicit PrereleaseName unchanged"
+    Assert-Equal "1.2.3-rc" $existingTag "Release must not move the existing prerelease tag"
+    Assert-Equal "1.2.4-rc" $tag "Release must create the next patch prerelease tag"
+    Assert-Equal "1.2.4-rc" $remoteTag "Release must push the next patch prerelease tag"
+    Assert-Equal "tag: 1.2.4-rc" $remoteSubject "Release must push the patch-bumped prerelease commit"
+
+    Write-Host "./Version.ps1 -ProjectPath $displayProjectPath -Release"
+    Write-Host "Patch-Bumped Prerelease Tag: $tag"
     Write-TestSeparator
 }
 
@@ -1429,9 +1520,11 @@ try {
     Test-ReleaseWorksFromProjectSubdirectory
     Test-ReleaseUsesConventionalCommitsSinceLatestSemVerTag
     Test-ReleaseIgnoresNonConventionalCommits
-    Test-ReleaseMovesExistingTagWhenNoConventionalBumpExists
+    Test-ReleaseBumpsPatchWhenCalculatedStableTagExists
     Test-ReleaseUsesProjectVersionAndCommitsAfterNonSemVerLatestTag
     Test-ReleaseUsesProjectVersionAndAllCommitsWhenNoTagsExist
+    Test-ReleaseCreatesPrereleaseTagFromProjectState
+    Test-ReleaseBumpsPatchWhenCalculatedPrereleaseTagExists
     Test-ReleaseFailsBeforeSavingWhenUntrackedFilesExist
     Test-ReleaseFailsBeforeSavingWhenUnstagedChangesExist
     Test-ReleaseFailsBeforeSavingWhenStagedChangesExist

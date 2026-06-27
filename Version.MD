@@ -1,225 +1,194 @@
-# Version Instructions
+# Release Version Guide
 
-These instructions define the required release workflow for this repository.
+This file defines the required workflow for publishing changes from this repository to the remote Git repository.
 
-Expected `DotnetSemVerPs` script version: `1.15.3` or newer.
+This file is for this repository only. For reusable agent instructions that are copied into other repositories, use:
 
-## Project Path
-
-Project handled by this release workflow:
-
-```powershell
-$ProjectPath = "./Path/To/Project.csproj"
+```text
+Version-Agent.MD
 ```
 
-When this file is reused in another .NET repository, update only the project file path assigned to `$ProjectPath`. The value must point to the target `.csproj` file. Keep the rest of the workflow using `$ProjectPath`.
+## Release Flow
 
-## Goal
+1. Decide the next SemVer version before editing any version value.
 
-Create a safe release by:
+   Review all changes already made in the working tree and choose the next version based on their public impact.
 
-- validating the current code before versioning
-- committing the actual change with Conventional Commits
-- letting `Tools/DotnetSemVer/Version.ps1` calculate the SemVer release
-- letting the script create and push the release commit and Git tag
-
-The agent must not calculate the next version manually.
-
-## Required Flow
-
-Always execute the release workflow in this order:
-
-1. Ensure the `Tools/DotnetSemVer` submodule exists.
-
-   If the submodule does not exist, add it:
-
-   ```powershell
-   git submodule add https://github.com/Satancito/DotnetSemVerPs.git Tools/DotnetSemVer
-   ```
-
-   If the submodule already exists, do not add it again.
-
-2. Sync and update the `Tools/DotnetSemVer` submodule.
-
-   ```powershell
-   git submodule sync --recursive Tools/DotnetSemVer
-   git submodule update --init --recursive Tools/DotnetSemVer
-   git submodule update --remote --recursive Tools/DotnetSemVer
-   ```
-
-3. Refresh this file from the updated submodule instructions.
-
-   Use the content from:
+   Example version:
 
    ```text
-   Tools/DotnetSemVer/Version.MD
+   1.16.1
    ```
 
-   Preserve the current repository's `$ProjectPath` value. Replace the rest of this file with the updated content from `Tools/DotnetSemVer/Version.MD`.
+   Use semantic versioning to decide which part of the version must be increased:
 
-4. Inspect the working tree and identify only the files that belong to the current change.
+   - Increase **Major** for breaking changes, removed parameters, renamed flags, incompatible output changes, incompatible `.csproj` property behavior, incompatible release behavior, or any change that requires consumers to update their usage.
+   - Increase **Minor** for new commands, new flags, new behavior, new release workflows, new documentation workflows, or backward-compatible features.
+   - Increase **Patch** for bug fixes, help text fixes, README fixes, LEEME fixes, release guide fixes, agent instruction fixes, small internal improvements, or any change that does not alter public behavior.
 
-   ```powershell
-   git status --short
+   Examples:
+
+   ```text
+   1.16.0 -> 1.16.1  Patch
+   1.16.0 -> 1.17.0  Minor
+   1.16.0 -> 2.0.0   Major
    ```
 
-5. Build the project referenced by `$ProjectPath`.
+2. Update the selected version everywhere it is represented.
 
-   ```powershell
-   dotnet build $ProjectPath --configuration Release
+   Update the script version in:
+
+   ```text
+   Version.ps1
    ```
 
-6. Run tests if test projects exist.
+   Update the script version test expectation in:
 
-   ```powershell
-   dotnet test --configuration Release
+   ```text
+   Version-Tests.ps1
    ```
 
-   If no test projects exist, state that tests were not available and continue only after the build succeeds.
+   Update any documentation that shows the current version, such as:
 
-7. Stage only files that belong to the current change.
-
-   ```powershell
-   git add <required-file-1> <required-file-2>
+   ```text
+   README.md
+   LEEME.md
+   Version-Agent.MD
    ```
 
-   Prefer explicit file paths. Use `git add -A` only when every current change has been inspected and belongs to the commit.
+   Add or update the matching release notes in:
 
-8. Review staged changes for secrets, credentials, private URLs, connection strings, certificates, tokens, or sensitive personal data.
-
-   ```powershell
-   git diff --cached
+   ```text
+   CHANGELOG.md
    ```
 
-9. Create one or more normal commits as needed.
+## Update Usage And Documentation
 
-   ```powershell
-   git commit -m "<type>: <description>"
-   ```
+Always update the command usage exposed by:
 
-   Every commit must use Conventional Commits. Use a short description in the subject and add a longer body when the change needs details for a future changelog. Make the longer description as detailed as possible: include what changed, why it changed, relevant implementation details, user-visible impact, validation performed, and any limitations or follow-up notes. Do not include personal data, secrets, credentials, tokens, certificates, private URLs, or connection strings.
-
-   ```powershell
-   git commit -m "<type>: <description>" -m "<longer description with relevant technical details>"
-   ```
-
-   Repeat steps 7 through 9 as needed until every intended change has been committed.
-
-10. Confirm the Git working tree is completely clean before releasing.
-
-   ```powershell
-   git status --short
-   ```
-
-   Do not continue if there are untracked files, unstaged changes, or staged changes waiting to be committed.
-
-11. Run `Version.ps1 -Release` against `$ProjectPath`.
-
-   ```powershell
-   ./Tools/DotnetSemVer/Version.ps1 -ProjectPath $ProjectPath -Release
-   ```
-
-   Do not pass `-Type` with `-Release`.
-
-## Conventional Commits
-
-Conventional Commits is the commit message format used by the release script to decide the next SemVer version. The agent must write the normal commit in this format before running `Version.ps1 -Release`.
-
-Required format:
-
-```text
-<type>: <description>
+```powershell
+./Version.ps1 -Usage
 ```
 
-Optional scope:
+The `-Usage` output must describe the current parameters, parameter sets, behavior, return values, release rules, and important safety rules.
+
+Also update repository documentation when the change affects usage, installation, release flow, Conventional Commits, agent instructions, or generated output:
 
 ```text
-<type>(<scope>): <description>
+README.md
+LEEME.md
+CHANGELOG.md
+Version-Agent.MD
+Version.MD
 ```
 
-Examples:
+Keep `README.md` and `LEEME.md` aligned. Keep `Version-Agent.MD` focused on reusable agent workflow for other repositories. Keep this `Version.MD` focused on releasing this repository itself.
 
-```text
-feat: add legal entity seed data
-fix(auth): map invalid credentials to problem details
-ci: clean up Azure pipeline deployment step
+## Validate Before Commit
+
+Validate the PowerShell script before staging:
+
+```powershell
+$tokens = $null
+$errors = $null
+[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ./Version.ps1), [ref]$tokens, [ref]$errors) | Out-Null
+if ($errors.Count -gt 0) {
+    $errors | ForEach-Object { $_.Message }
+    exit 1
+}
 ```
 
-Commit message rules:
+Confirm the script returns the expected version:
 
-| Rule | Requirement |
-|---|---|
-| Format | Use `<type>: <description>` or `<type>(<scope>): <description>`. |
-| Detail | Write enough detail to explain the technical change clearly. |
-| Privacy | Do not include personal, private, or sensitive information. |
-| Secrets | Do not include credentials, API keys, tokens, passwords, secrets, connection strings, certificates, or private URLs. |
-| Staged review | Before committing, verify staged changes do not contain sensitive data. |
-
-Commit types:
-
-| Type | Use When | SemVer Impact |
-|---|---|---|
-| `feat` | Adds a backward-compatible feature or capability. | Minor |
-| `fix` | Fixes a bug. | Patch |
-| `perf` | Improves performance. | Patch |
-| `docs` | Changes documentation only. | No increment |
-| `test` | Changes tests only. | No increment |
-| `chore` | Maintenance work that does not affect runtime behavior. | No increment |
-| `refactor` | Restructures code without changing behavior. | No increment |
-| `style` | Formatting-only change. | No increment |
-| `build` | Changes build system, dependencies, or packaging. | No increment |
-| `ci` | Changes CI/CD configuration or pipeline behavior. | No increment |
-| `tag` | Release commit created by the version script. | No increment |
-| Non-conventional message | Any message that does not follow Conventional Commits. | Ignored |
-
-Breaking changes must be explicit:
-
-```text
-feat!: change public API contract
-feat(api)!: change request payload format
+```powershell
+./Version.ps1 -Version
 ```
 
-Or in the commit body:
+Run the full test suite:
 
-```text
-BREAKING CHANGE: describe the incompatible behavior.
+```powershell
+./Version-Tests.ps1
 ```
 
-A breaking change always increments major, even when the commit type would normally have no version impact.
+The full test suite must run and pass before commit. If tests fail, hang, cannot be executed, or cannot be verified, stop the release immediately. Do not stage, commit, tag, or push until the test problem is fixed and the full suite passes.
 
-Breaking change examples:
+## Stage Changes
 
-| Commit Message | SemVer Impact |
-|---|---|
-| `feat!: remove legacy authentication flow` | Major |
-| `feat(api)!: change request payload format` | Major |
-| `fix!: rename public configuration property` | Major |
-| `refactor(core)!: remove deprecated compatibility layer` | Major |
-| `docs!: remove old documented API contract` | Major |
+Stage only the files required for the release.
 
-## Release Rules
+Do not stage local project environment files, temporary files, generated scratch files, or unrelated changes unless the release explicitly requires them.
 
-- Do not release before build succeeds.
-- Do not release before tests pass, when tests exist.
-- Do not run `Version.ps1 -Release` with untracked, unstaged, or staged files.
-- Do not create the release commit manually.
-- Do not create the Git tag manually.
-- Do not push manually after `Version.ps1 -Release`; the script pushes the branch and generated tag.
-- Do not commit unrelated local changes.
-- Prefer staging explicit file paths.
-- Do not use `git add -A` unless every current change was inspected and belongs to the commit.
-- Do not use prerelease or build metadata unless the user explicitly asks for it.
-- Do not promote to stable unless the user explicitly asks for it.
-- If no test projects exist, state that tests were not available and continue only after build succeeds.
+Example:
 
-## Explicit Non-Release Versioning
+```powershell
+git add Version.ps1 Version-Tests.ps1 README.md LEEME.md CHANGELOG.md Version-Agent.MD Version.MD
+```
 
-Only use non-release versioning when the user explicitly asks for prerelease, build metadata, stable promotion, or local version preview.
+Adjust the staged file list to match the actual changes.
 
-Those commands are not part of the normal release flow and must not be mixed with `-Release`.
+## Commit
 
-For exact parameter usage, read:
+Create a commit using Conventional Commits. Use a short subject and a detailed body when the change needs context for future changelog generation.
 
-```text
-Tools/DotnetSemVer/Readme.md
+Example:
+
+```powershell
+git commit -m "docs: update release guide" -m "Update the internal release guide for DotnetSemVerPs with the current validation, documentation, staging, tagging, and push workflow. This change does not alter script behavior."
+```
+
+Use commit types according to the release impact:
+
+- `feat` for backward-compatible features.
+- `fix` or `perf` for patch-level runtime changes.
+- `docs` for documentation-only changes.
+- `test` for test-only changes.
+- `chore`, `refactor`, `style`, `build`, or `ci` for maintenance changes that do not affect runtime behavior.
+- Add `!` or `BREAKING CHANGE:` only for breaking changes.
+
+Do not include personal data, secrets, credentials, tokens, certificates, private URLs, or connection strings in commit messages.
+
+## Tag
+
+Create a Git tag using only the SemVer release version.
+
+Example:
+
+```powershell
+git tag 1.16.1
+```
+
+Do not prefix the tag with `v`.
+
+## Push
+
+Push the branch:
+
+```powershell
+git push origin main
+```
+
+Push the release tag:
+
+```powershell
+git push origin 1.16.1
+```
+
+## Final Check
+
+Confirm the working tree is clean:
+
+```powershell
+git status --short
+```
+
+Confirm the tag points at the release commit:
+
+```powershell
+git tag --points-at HEAD
+```
+
+Confirm the tag exists on the remote:
+
+```powershell
+git ls-remote --tags origin 1.16.1
 ```

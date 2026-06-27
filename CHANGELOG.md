@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.16.0 - 2026-06-27
+
+### Added
+
+- Added `-Release` support for non-stable SemVer tags when the project stores prerelease or build metadata state.
+- Added release tag collision handling that increments patch until an available stable or non-stable tag is found, without moving existing tags.
+
+### Tests
+
+- Added release tests for prerelease tag creation from project state and patch bumping when calculated stable or prerelease tags already exist.
+
+### Documentation
+
+- Renamed the reusable agent instruction file from `Version.MD` to `Version-Agent.MD`.
+- Updated agent workflow instructions to read the target project path from root `ProjectPath.txt`.
+- Updated the reusable workflow to refresh `Version-Agent.MD` directly from `Tools/DotnetSemVerPs/Version-Agent.MD`.
+
 ## 1.15.3 - 2026-05-12
 
 ### Documentation

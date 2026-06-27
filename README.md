@@ -4,7 +4,7 @@ PowerShell tooling for managing SemVer versions in .NET project files.
 
 `DotnetSemVerPs` updates `.csproj` version properties, supports stable, prerelease, and build metadata flows, generates UTC epoch build numbers, and includes a test script to validate versioning scenarios.
 
-Current script version: `1.15.3`.
+Current script version: `1.16.0`.
 
 ### Features
 
@@ -27,20 +27,23 @@ Spanish documentation is available in [LEEME.md](LEEME.md).
 
 ### Agent Instructions File
 
-`Version.MD` is a reusable instruction file for coding agents that need to apply
-this release workflow in another .NET repository.
+`Version-Agent.MD` is a reusable instruction file for coding agents that need to
+apply this release workflow in another .NET repository.
 
 To use it in a target repository:
 
-1. Copy `Version.MD` to the desired repository or folder.
-2. Edit only the `$ProjectPath` value inside `Version.MD` so it points to the
-   target `.csproj` file.
-3. Tell the agent to apply the instructions from that `Version.MD` file.
+1. Copy `Version-Agent.MD` to the desired repository root.
+2. Create `ProjectPath.txt` in that same root folder.
+3. Put only the unixlike path to the target `.csproj` file inside
+   `ProjectPath.txt`. The path is relative to the repository root and should not
+   start with `./`, for example `MySolution/MyProject/MyProject.csproj`.
+4. Tell the agent to apply the instructions from `Version-Agent.MD`.
 
-The agent should then follow the ordered workflow in `Version.MD`: ensure or
-update the `Tools/DotnetSemVer` submodule, refresh the instruction file from the
-submodule while preserving `$ProjectPath`, validate/build/test the project,
-create Conventional Commits, and finally run `Version.ps1 -Release`.
+The agent should then follow the ordered workflow in `Version-Agent.MD`: ensure
+or update the `Tools/DotnetSemVerPs` submodule, copy the latest
+`Tools/DotnetSemVerPs/Version-Agent.MD` to the repository root, read the project
+path from `ProjectPath.txt`, validate/build/test the project, create
+Conventional Commits, and finally run `Version.ps1 -Release`.
 
 ### Version Properties
 
@@ -186,17 +189,25 @@ Commits: breaking changes increment major, `feat` increments minor, and `fix` or
 `perf` increment patch. Commit messages that are not Conventional Commits are
 ignored by the calculation; Conventional Commit types that do not map to a bump,
 such as `docs` or `test`, do not change the version. If no commit increments the
-version, the generated version stays equal to the latest SemVer tag and the
-script moves that existing tag to the new release commit. If the latest reachable
+version, the generated version starts equal to the latest SemVer tag and then
+increments patch until it finds an available tag. If the latest reachable
 tag is not valid SemVer, the script treats the repository as
 having no SemVer tags, starts from the current project version, and analyzes
 commits after that tag. If no tag exists, the script starts from the current
 project version and analyzes all commits.
 
 If the release is valid, the script updates the `.csproj`, stages only that
-project file, commits only that project file with `tag: <version>`, creates or
-moves a tag named exactly as the generated SemVer value, then pushes the current
+project file, commits only that project file with `tag: <version>`, creates a
+tag named exactly as the generated SemVer value, then pushes the current
 branch and that tag to `origin`.
+
+`-Release` checks the stored project state before saving. If the project has no
+stored prerelease or build metadata state, the release is stable and keeps the
+existing stable tag behavior. If `PrereleaseName` or `BuildName` is stored in the
+project, `-Release` publishes a non-stable SemVer tag from those project values.
+Existing tags are never moved. When the generated stable or non-stable tag
+already exists, the script increments patch until it finds an available tag and
+updates the `.csproj` with that final SemVer value.
 
 ### Release Conventional Commits
 
@@ -482,8 +493,10 @@ After NumVer: 7.3.1
 - `-Release` calculates the release version from chronological Conventional Commits since the latest SemVer tag when one exists.
 - `-Release` starts from the project version and scans commits after the latest tag when that tag is not SemVer.
 - `-Release` starts from the project version and scans all commits when no tag exists.
-- `-Release` moves the latest SemVer tag to the release commit when no commit increments the version.
-- `-Release` stages and commits only the project version change with `tag: <version>`, creates or moves the SemVer tag, then pushes the current branch and tag to `origin`.
+- `-Release` increments patch until it finds an available tag when the generated tag already exists.
+- `-Release` publishes a non-stable tag when the project stores `PrereleaseName` or `BuildName`.
+- `-Release` never moves existing tags.
+- `-Release` stages and commits only the project version change with `tag: <version>`, creates the SemVer tag, then pushes the current branch and tag to `origin`.
 - `-IsPrerelease` requires a non-empty `-PrereleaseName`.
 - `-IsBuild` requires a non-empty `-BuildName`.
 - `-IsNotPrerelease` overrides `-IsPrerelease` and clears stored `PrereleaseName`.
@@ -566,7 +579,7 @@ The tests cover:
 - release commit and tag creation
 - release version calculation from chronological Conventional Commits
 - release ignoring commit messages that are not Conventional Commits
-- release tag movement when no Conventional Commit increments the version
+- release patch bumping when the calculated release tag already exists
 - release calculation from the project version when the latest tag is not SemVer
 - release calculation from the project version when no tag exists
 - release push of the current branch and tag to `origin`

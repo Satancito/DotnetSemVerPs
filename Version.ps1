@@ -61,7 +61,7 @@ param(
     [string]$SemVer
 )
 
-$ScriptVersion = "1.15.3"
+$ScriptVersion = "1.16.0"
 $DefaultInitialVersionCore = "0.1.0"
 $SemVerPattern = '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
 
@@ -105,7 +105,7 @@ Options:
   -BuildName <name>          Build name. Required with -IsBuild.
   -IsNotBuild                Disables build. Takes precedence over -IsBuild.
   -Stable                    Promotes to stable when used alone, or clears prerelease/build after Major, Minor, or Patch.
-  -Release                   Requires a clean Git working tree, calculates release version from Conventional Commits, commits only the updated project file, creates or moves a Git tag, and pushes both. Must be used without -Type.
+  -Release                   Requires a clean Git working tree, calculates release version from Conventional Commits, commits only the updated project file, creates a Git tag, and pushes both. Must be used without -Type. Uses stored prerelease/build state to publish non-stable SemVer tags when present.
   -WhatIf                    Shows the generated result without saving the project file.
   -Usage                     Shows this help. Must be used alone.
   -Version                   Shows the script version when used alone, or the project Version with -ProjectPath. Creates 0.1.0 when missing.
@@ -137,10 +137,12 @@ Rules:
   Release requires a valid Git repository and a completely clean Git working tree before it starts.
   Release fails before saving if untracked, unstaged, or staged changes already exist.
   Release uses commits since the latest SemVer tag to calculate the next version. breaking changes increment major, feat increments minor, and fix/perf increment patch.
-  If no commit increments the version, Release moves the existing SemVer tag to the new release commit.
+  If the generated SemVer tag already exists, Release increments patch until it finds an available tag.
   If the latest tag is not SemVer, Release starts from the project version and scans commits after that tag.
   If no tag exists, Release starts from the project version and scans all commits.
-  Release stages and commits only the project version change with tag: <version>, creates or moves the SemVer tag, then pushes the branch and tag to origin.
+  Release publishes stable tags when the project has no stored prerelease/build state. When stored PrereleaseName or BuildName values exist, Release publishes a non-stable SemVer tag from those project values.
+  Existing Release tags are never moved. When the generated tag already exists, Release increments patch and updates the project with the available SemVer value.
+  Release stages and commits only the project version change with tag: <version>, creates the SemVer tag, then pushes the branch and tag to origin.
   WhatIf calculates and prints the result without writing changes to the project file.
   If -IsPrerelease is used, -PrereleaseName is required.
   If -IsBuild is used, -BuildName is required.
@@ -462,7 +464,6 @@ function Get-ReleaseVersionPlan {
             HasSemVerTag = $false
             LatestTag = $latestTag
             VersionCore = $versionCore
-            ShouldMoveExistingTag = $false
         }
     }
 
@@ -480,7 +481,6 @@ function Get-ReleaseVersionPlan {
         HasSemVerTag = $true
         LatestTag = $latestTag
         VersionCore = $versionCore
-        ShouldMoveExistingTag = ($versionCore -eq (ConvertTo-SemVerCore $latestTag))
     }
 }
 
@@ -534,8 +534,7 @@ function Complete-GitRelease {
     param(
         [string]$RepositoryPath,
         [string]$ProjectPath,
-        [string]$Version,
-        [bool]$MoveExistingTag = $false
+        [string]$Version
     )
 
     $resolvedProjectPath = (Resolve-Path $ProjectPath).Path
@@ -547,12 +546,35 @@ function Complete-GitRelease {
 
     Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("add", "--", $resolvedProjectPath) | Out-Null
     Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("commit", "-m", "tag: $Version", "--", $resolvedProjectPath) | Out-Null
-    $tagArguments = if ($MoveExistingTag) { @("tag", "-f", $Version) } else { @("tag", $Version) }
-    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments $tagArguments | Out-Null
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("tag", $Version) | Out-Null
     Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("push", "origin", $branchName) | Out-Null
-    $pushTagArguments = if ($MoveExistingTag) { @("push", "--force", "origin", $Version) } else { @("push", "origin", $Version) }
-    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments $pushTagArguments | Out-Null
+    Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("push", "origin", $Version) | Out-Null
 }
+
+function Get-AvailableReleaseVersionCore {
+    param(
+        [string]$RepositoryPath,
+        [string]$ProjectPath,
+        [string]$VersionCore,
+        [string]$BuildNumber
+    )
+
+    $candidateCore = ConvertTo-SemVerCore $VersionCore
+
+    for ($attempt = 0; $attempt -lt 100; $attempt++) {
+        $preview = Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $true -BuildNumberOverride $BuildNumber -VersionCoreOverride $candidateCore
+        Invoke-GitCommand -RepositoryPath $RepositoryPath -Arguments @("check-ref-format", "refs/tags/$($preview.Next.Version)") | Out-Null
+
+        if (-not (Test-GitTagExists -RepositoryPath $RepositoryPath -TagName $preview.Next.Version)) {
+            return $candidateCore
+        }
+
+        $candidateCore = Update-SemVerCore $candidateCore "Patch"
+    }
+
+    throw "Release could not find an available SemVer tag after 100 patch increments."
+}
+
 
 function Test-Parameters {
     if ($Usage -or $Tests -or $Validate -or $Version -or $BuildNumber) {
@@ -949,14 +971,12 @@ try {
         $repositoryRoot = Get-GitRepositoryRoot -Path $ProjectPath
         Assert-GitWorkingTreeClean -RepositoryPath $repositoryRoot
         $releasePlan = Get-ReleaseVersionPlan -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath
-        $versionCoreOverride = $releasePlan.VersionCore
+        $versionCoreOverride = Get-AvailableReleaseVersionCore -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -VersionCore $releasePlan.VersionCore -BuildNumber $releaseBuildNumber
         $preview = Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $true -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
-        if (-not $releasePlan.ShouldMoveExistingTag) {
-            Assert-GitTagAvailable -RepositoryPath $repositoryRoot -TagName $preview.Next.Version
-        }
+        Assert-GitTagAvailable -RepositoryPath $repositoryRoot -TagName $preview.Next.Version
 
         $result = Update-ProjectVersion -Path $ProjectPath -BumpType "" -PreviewOnly $false -BuildNumberOverride $releaseBuildNumber -VersionCoreOverride $versionCoreOverride
-        Complete-GitRelease -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -Version $result.Next.Version -MoveExistingTag $releasePlan.ShouldMoveExistingTag
+        Complete-GitRelease -RepositoryPath $repositoryRoot -ProjectPath $ProjectPath -Version $result.Next.Version
     } else {
         $bumpType = if ($Stable -and [string]::IsNullOrWhiteSpace($Type)) { "Stable" } else { $Type }
         $result = Update-ProjectVersion -Path $ProjectPath -BumpType $bumpType -PreviewOnly $WhatIfPreference
